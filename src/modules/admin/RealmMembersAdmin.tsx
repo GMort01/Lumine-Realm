@@ -91,13 +91,19 @@ export default function RealmMembersAdmin() {
     setSuccessMessage(null);
     try {
       await realmMembersService.setMemberEnabled(user.user_id, enable);
-      await loadData();
+      setUsers((currentUsers) => currentUsers.map((currentUser) => (
+        currentUser.user_id === user.user_id
+          ? { ...currentUser, is_member: enable }
+          : currentUser
+      )));
       setSuccessMessage(enable
         ? `${user.username} ya está vinculado y aparecerá en el mapa.`
         : `${user.username} se quitó del mapa del Realm.`);
     } catch (error) {
-      console.error('Error al cambiar la vinculación del usuario:', error);
-      setErrorMessage('No se pudo actualizar su vinculación al Realm.');
+      console.error('Error exacto de Supabase al cambiar la vinculación del usuario:', error);
+      setErrorMessage(error instanceof Error
+        ? `No se pudo actualizar su vinculación al Realm: ${error.message}`
+        : 'No se pudo actualizar su vinculación al Realm.');
     } finally {
       setBusyId(null);
     }

@@ -198,10 +198,19 @@ export const realmMembersService = {
     }
 
     if (isEnabled) {
-      const { error } = await supabase
+      const { data: existingMember, error: lookupError } = await supabase
         .from('realm_members')
-        .upsert({ user_id: userId, invited_by: user.id }, { onConflict: 'user_id', ignoreDuplicates: true });
-      if (error) throw error;
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+      if (existingMember) return;
+
+      const { error: insertError } = await supabase
+        .from('realm_members')
+        .insert([{ user_id: userId, invited_by: user.id }]);
+      if (insertError?.code === '23505') return;
+      if (insertError) throw insertError;
       return;
     }
 
