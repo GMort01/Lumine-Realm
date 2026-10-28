@@ -1,31 +1,68 @@
 @import "tailwindcss";
 
 @theme {
-  --color-slate-50: #f8fafc;
-  --color-slate-100: #f1f5f9;
-  --color-slate-200: #e2e8f0;
-  --color-slate-300: #cbd5e1;
-  --color-slate-400: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-slate-600: #475569;
-  --color-slate-700: #334155;
-  --color-slate-800: #263352;
-  --color-slate-900: #151c2e;
-  --color-slate-950: #0b0f19;
+  --color-slate-50: var(--realm-slate-50);
+  --color-slate-100: var(--realm-slate-100);
+  --color-slate-200: var(--realm-slate-200);
+  --color-slate-300: var(--realm-slate-300);
+  --color-slate-400: var(--realm-slate-400);
+  --color-slate-500: var(--realm-slate-500);
+  --color-slate-600: var(--realm-slate-600);
+  --color-slate-700: var(--realm-slate-700);
+  --color-slate-800: var(--realm-slate-800);
+  --color-slate-900: var(--realm-slate-900);
+  --color-slate-950: var(--realm-slate-950);
 
-  --color-background: #0b0f19;
-  --color-card: #151c2e;
-  --color-glass: #151c2e;
-  --color-realm-border: #263352;
+  --color-background: var(--realm-background);
+  --color-card: var(--realm-card);
+  --color-glass: var(--realm-card);
+  --color-realm-border: var(--realm-border);
   --color-realm-primary: #f472b6;
   --color-realm-secondary: #a855f7;
   --color-realm-accent: #fbbf24;
 }
 
+:root {
+  color-scheme: dark;
+  --realm-slate-50: #f8fafc;
+  --realm-slate-100: #f1f5f9;
+  --realm-slate-200: #e2e8f0;
+  --realm-slate-300: #cbd5e1;
+  --realm-slate-400: #94a3b8;
+  --realm-slate-500: #64748b;
+  --realm-slate-600: #475569;
+  --realm-slate-700: #334155;
+  --realm-slate-800: #263352;
+  --realm-slate-900: #151c2e;
+  --realm-slate-950: #0b0f19;
+  --realm-background: #0b0f19;
+  --realm-card: #151c2e;
+  --realm-border: #263352;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --realm-slate-50: #0f172a;
+  --realm-slate-100: #1e293b;
+  --realm-slate-200: #334155;
+  --realm-slate-300: #475569;
+  --realm-slate-400: #64748b;
+  --realm-slate-500: #64748b;
+  --realm-slate-600: #475569;
+  --realm-slate-700: #334155;
+  --realm-slate-800: #e2e8f0;
+  --realm-slate-900: #ffffff;
+  --realm-slate-950: #f8fafc;
+  --realm-background: #f1f5f9;
+  --realm-card: #ffffff;
+  --realm-border: #cbd5e1;
+}
+
 body {
   margin: 0;
-  background-color: #0b0f19;
-  color: #f1f5f9;
+  background-color: var(--realm-background);
+  color: var(--realm-slate-100);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   overflow-x: hidden;
+  transition: background-color 180ms ease, color 180ms ease;
 }

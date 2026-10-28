@@ -10,6 +10,15 @@ export interface RealmMember {
   avatar_url: string | null;
 }
 
+export interface RealmRelationship {
+  id: string;
+  initiator_id: string;
+  partner_id: string;
+  status: 'pending' | 'accepted' | 'declined' | 'ended';
+  created_at: string;
+  accepted_at: string | null;
+}
+
 export interface RealmInvitation {
   id: string;
   email: string;
@@ -46,7 +55,7 @@ export const realmMembersService = {
     if (authError) throw authError;
 
     const [{ data: profiles, error: profilesError }, { data: members, error: membersError }] = await Promise.all([
-      supabase.from('profiles').select('*'),
+      supabase.from('admin_registered_profiles').select('*'),
       supabase.from('realm_members').select('user_id'),
     ]);
 
@@ -106,6 +115,72 @@ export const realmMembersService = {
         avatar_url: profile?.avatar_url ?? null,
       };
     });
+  },
+
+  async getHiddenMapMemberIds(): Promise<Set<string>> {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!user) return new Set();
+
+    const { data, error } = await supabase
+      .from('realm_map_hidden_members')
+      .select('member_id')
+      .eq('viewer_id', user.id);
+    if (error) throw error;
+    return new Set(data.map((row) => row.member_id));
+  },
+
+  async setMapMemberVisibility(memberId: string, visible: boolean): Promise<void> {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!user) throw new Error('Inicia sesión para personalizar tu mapa.');
+    if (memberId === user.id) throw new Error('Tu perfil siempre aparece en el mapa.');
+
+    if (visible) {
+      const { error } = await supabase
+        .from('realm_map_hidden_members')
+        .delete()
+        .eq('viewer_id', user.id)
+        .eq('member_id', memberId);
+      if (error) throw error;
+      return;
+    }
+
+    const { error } = await supabase
+      .from('realm_map_hidden_members')
+      .upsert({ viewer_id: user.id, member_id: memberId }, { onConflict: 'viewer_id,member_id', ignoreDuplicates: true });
+    if (error) throw error;
+  },
+
+  async getMyRelationships(): Promise<RealmRelationship[]> {
+    const { data, error } = await supabase
+      .from('realm_relationships')
+      .select('id, initiator_id, partner_id, status, created_at, accepted_at')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as RealmRelationship[];
+  },
+
+  async invitePartner(partnerId: string): Promise<void> {
+    const { error } = await supabase.rpc('invite_realm_partner', {
+      p_partner_id: partnerId,
+    });
+    if (error) throw error;
+  },
+
+  async respondToPartnerInvitation(relationshipId: string, response: 'accepted' | 'declined'): Promise<void> {
+    const { error } = await supabase.rpc('respond_realm_relationship', {
+      p_relationship_id: relationshipId,
+      p_response: response,
+    });
+    if (error) throw error;
+  },
+
+  async endRelationship(relationshipId: string): Promise<void> {
+    const { error } = await supabase.rpc('end_realm_relationship', {
+      p_relationship_id: relationshipId,
+    });
+    if (error) throw error;
   },
 
   async getMyPendingInvitations(email: string): Promise<RealmInvitation[]> {
@@ -188,7 +263,7 @@ export const realmMembersService = {
     };
   },
 
-  async setMemberEnabled(userId: string, isEnabled: boolean): Promise<void> {
+  async setMemberEnabled(userId: string, isEnabled: boolean): Promise<string | null> {
     await assertAdmin();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
@@ -204,21 +279,61 @@ export const realmMembersService = {
         .eq('user_id', userId)
         .maybeSingle();
       if (lookupError) throw lookupError;
-      if (existingMember) return;
+      if (existingMember) return null;
 
       const { error: insertError } = await supabase
         .from('realm_members')
         .insert([{ user_id: userId, invited_by: user.id }]);
-      if (insertError?.code === '23505') return;
+      if (insertError?.code === '23505') return null;
       if (insertError) throw insertError;
-      return;
+      return null;
     }
 
-    const { error } = await supabase
-      .from('realm_members')
-      .delete()
-      .eq('user_id', userId);
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('avatar_url')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    const { data: removedContent, error } = await supabase.rpc('admin_remove_realm_member', { p_user_id: userId });
     if (error) throw error;
+
+    const content = removedContent as { gift_paths?: unknown; timeline_paths?: unknown } | null;
+    const giftPaths = Array.isArray(content?.gift_paths)
+      ? content.gift_paths.filter((path): path is string => typeof path === 'string')
+      : [];
+    const timelinePaths = Array.isArray(content?.timeline_paths)
+      ? content.timeline_paths.filter((path): path is string => typeof path === 'string')
+      : [];
+    const storageCleanupErrors: string[] = [];
+    const storageDeletes: Array<{ bucket: string; paths: string[] }> = [];
+    if (giftPaths.length) storageDeletes.push({ bucket: 'gift-attachments', paths: giftPaths });
+    if (timelinePaths.length) storageDeletes.push({ bucket: 'realm-timeline-images', paths: timelinePaths });
+    const avatarUrl = profile?.avatar_url;
+    if (typeof avatarUrl === 'string') {
+      const marker = '/profile-avatars/';
+      const markerIndex = avatarUrl.indexOf(marker);
+      if (markerIndex >= 0) {
+        try {
+          const path = decodeURIComponent(avatarUrl.slice(markerIndex + marker.length).split(/[?#]/, 1)[0]);
+          storageDeletes.push({ bucket: 'profile-avatars', paths: [path] });
+        } catch (pathError) {
+          console.error('El miembro se quitó, pero no se pudo interpretar la ruta de su avatar:', pathError);
+          storageCleanupErrors.push('profile-avatars');
+        }
+      }
+    }
+
+    for (const { bucket, paths } of storageDeletes) {
+      const { error: storageError } = await supabase.storage.from(bucket).remove(paths);
+      if (storageError) {
+        console.error(`El miembro se quitó, pero falló la limpieza del bucket ${bucket}:`, storageError);
+        storageCleanupErrors.push(bucket);
+      }
+    }
+    return storageCleanupErrors.length
+      ? `El usuario se quitó del Realm, pero no se pudieron limpiar algunos archivos de Storage (${[...new Set(storageCleanupErrors)].join(', ')}).`
+      : null;
   },
 
   async acceptInvitation(invitationId: string): Promise<void> {

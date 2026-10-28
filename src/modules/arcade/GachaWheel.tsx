@@ -15,9 +15,11 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { ADMIN_EMAIL } from '../../config/roles';
+import CouponRedemptionDialog from '../../components/ui/CouponRedemptionDialog';
 import { couponPrizesService } from '../../services/couponPrizesService';
 import { couponsService } from '../../services/couponsService';
 import { gachaService } from '../../services/gachaService';
+import type { ContentAudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import type { CouponPrize } from '../../services/couponPrizesService';
 import type { Coupon } from '../../services/couponsService';
 
@@ -26,9 +28,10 @@ const MAX_PRIZES = prizeColors.length;
 
 interface GachaWheelProps {
   onOpenProfile: () => void;
+  audienceFilter: ContentAudienceFilter;
 }
 
-export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
+export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheelProps) {
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authReady, setAuthReady] = useState(false);
@@ -37,6 +40,8 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
   const [prizesLoading, setPrizesLoading] = useState(false);
   const [prizesError, setPrizesError] = useState<string | null>(null);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponsOwnerId, setCouponsOwnerId] = useState<string | null>(null);
+  const [prizesOwnerId, setPrizesOwnerId] = useState<string | null>(null);
   const [couponsLoading, setCouponsLoading] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -45,10 +50,22 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
   const [wonCoupon, setWonCoupon] = useState<Coupon | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
+  const [redemptionCoupon, setRedemptionCoupon] = useState<Coupon | null>(null);
 
-  const wheelBackground = prizes.length
-    ? `conic-gradient(${prizes.map((_, index) => {
-      const segment = 360 / prizes.length;
+  const visiblePrizes = prizesOwnerId === userId ? prizes : [];
+  const visibleCoupons = couponsOwnerId === userId
+    ? coupons.filter((coupon) => coupon.audience_scope === audienceFilter)
+    : [];
+  const filteredPrizes = visiblePrizes.filter((prize) => (
+    audienceFilter === 'relationship'
+      ? prize.audience_scope === 'relationship'
+      : prize.audience_scope !== 'relationship'
+  ));
+  const hasOtherAudiencePrizes = visiblePrizes.length > 0 && filteredPrizes.length === 0;
+
+  const wheelBackground = filteredPrizes.length
+    ? `conic-gradient(${filteredPrizes.map((_, index) => {
+      const segment = 360 / filteredPrizes.length;
       const start = index * segment;
       const end = (index + 1) * segment;
       return `#302445 ${start}deg ${start + 0.7}deg, ${prizeColors[index % prizeColors.length]} ${start + 0.7}deg ${end - 0.7}deg, #302445 ${end - 0.7}deg ${end}deg`;
@@ -91,20 +108,24 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
 
   useEffect(() => {
     if (!userId) {
-      setCoupons([]);
-      setPrizes([]);
       return;
     }
 
     let active = true;
-    setCouponsLoading(true);
-    setPrizesLoading(true);
-    setCouponError(null);
-    setPrizesError(null);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setCouponsLoading(true);
+      setPrizesLoading(true);
+      setCouponError(null);
+      setPrizesError(null);
+    });
 
     void couponsService.getMyCoupons()
       .then((items) => {
-        if (active) setCoupons(items);
+        if (active) {
+          setCoupons(items);
+          setCouponsOwnerId(userId);
+        }
       })
       .catch((error: unknown) => {
         console.error('Error al cargar los cupones:', error);
@@ -116,7 +137,10 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
 
     void couponPrizesService.getActivePrizes()
       .then((items) => {
-        if (active) setPrizes(items);
+        if (active) {
+          setPrizes(items);
+          setPrizesOwnerId(userId);
+        }
       })
       .catch((error: unknown) => {
         console.error('Error al cargar los premios de la ruleta:', error);
@@ -129,10 +153,10 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [userId, audienceFilter]);
 
   async function spinWheel() {
-    if (isSpinning || prizes.length === 0 || prizes.length > MAX_PRIZES) {
+    if (isSpinning || filteredPrizes.length === 0 || filteredPrizes.length > MAX_PRIZES) {
       return;
     }
 
@@ -142,7 +166,7 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
     setIsSpinning(true);
 
     try {
-      const result = await gachaService.spin();
+      const result = await gachaService.spin(audienceFilter);
       if (result.prizes.length < 2 || result.prizes.length > MAX_PRIZES) {
         throw new Error('El catálogo del servidor no coincide con los espacios de la ruleta.');
       }
@@ -156,6 +180,7 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
       setWonPrize(result.prize);
       setWonCoupon(result.coupon);
       setCoupons((currentCoupons) => [result.coupon, ...currentCoupons]);
+      setCouponsOwnerId(userId);
 
       const segment = 360 / result.prizes.length;
       const targetRotation = (360 - (prizeIndex * segment + segment / 2)) % 360;
@@ -226,7 +251,7 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
     );
   }
 
-  const canSpin = !prizesLoading && prizes.length >= 2 && prizes.length <= MAX_PRIZES && !prizesError;
+  const canSpin = !prizesLoading && filteredPrizes.length >= 2 && filteredPrizes.length <= MAX_PRIZES && !prizesError;
 
   return (
     <section aria-labelledby="gacha-title" className="space-y-7">
@@ -257,13 +282,23 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(196,181,253,0.08)_1px,transparent_1px)] bg-[size:24px_24px]" />
           {prizesLoading ? (
             <p role="status" className="relative flex items-center gap-2 text-sm text-violet-200"><LoaderCircle className="h-4 w-4 animate-spin" />Preparando premios...</p>
-          ) : prizes.length === 0 ? (
+          ) : filteredPrizes.length === 0 ? (
             <div className="relative max-w-sm text-center">
               <CircleHelp className="mx-auto mb-3 h-9 w-9 text-violet-300" />
-              <p className="font-semibold text-slate-100">La ruleta aún no tiene premios</p>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">{isAdmin ? 'Añade premios arriba para preparar la ruleta.' : 'El Game Master todavía está preparando sorpresas.'}</p>
+              <p className="font-semibold text-slate-100">
+                {audienceFilter === 'relationship' ? 'No hay premios para parejas' : 'No hay premios en esta audiencia'}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                {audienceFilter === 'relationship'
+                  ? hasOtherAudiencePrizes
+                    ? 'Sí hay premios activos, pero son para el grupo o para una persona. Edita uno o crea otro y selecciona “Mi vínculo de pareja” para que aparezca aquí.'
+                    : 'Crea o edita un premio y selecciona “Mi vínculo de pareja” en la audiencia. Los premios anteriores a los filtros siguen configurados para el grupo.'
+                  : hasOtherAudiencePrizes
+                    ? 'Hay premios activos, pero pertenecen a otra audiencia. Cambia el filtro o edita su audiencia.'
+                    : 'Todavía no hay premios activos para esta audiencia. Añade uno para preparar la ruleta.'}
+              </p>
             </div>
-          ) : prizes.length > MAX_PRIZES ? (
+          ) : filteredPrizes.length > MAX_PRIZES ? (
             <p role="alert" className="relative max-w-sm text-center text-sm text-amber-200">El catálogo supera los {MAX_PRIZES} espacios que caben en la ruleta. Pide al administrador que retire algunos premios.</p>
           ) : (
             <>
@@ -288,8 +323,8 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
                     if (event.propertyName === 'transform') handleSpinComplete();
                   }}
                 >
-                  {prizes.map((prize, index) => {
-                    const segment = 360 / prizes.length;
+                  {filteredPrizes.map((prize, index) => {
+                    const segment = 360 / filteredPrizes.length;
                     const angle = index * segment + segment / 2;
                     const radians = (angle * Math.PI) / 180;
                     const radius = 32;
@@ -327,7 +362,7 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
                 </div>
 
                 <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
-                  {prizes.map((prize, index) => (
+                  {filteredPrizes.map((prize, index) => (
                     <div key={prize.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-2.5 py-2 backdrop-blur-sm">
                       <span
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/30 text-xs font-black text-white shadow-inner"
@@ -350,19 +385,19 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
               <h3 className="flex items-center gap-2 font-bold text-slate-100"><Ticket className="h-4 w-4 text-pink-300" />Mis cupones</h3>
               <p className="mt-1 text-[10px] text-slate-500">Tu colección personal de premios.</p>
             </div>
-            <span className="rounded-full border border-violet-400/15 bg-violet-400/10 px-2.5 py-1 font-mono text-xs text-violet-200">{coupons.length}</span>
+            <span className="rounded-full border border-violet-400/15 bg-violet-400/10 px-2.5 py-1 font-mono text-xs text-violet-200">{visibleCoupons.length}</span>
           </div>
 
           {couponsLoading && <p role="status" className="flex items-center gap-2 text-xs text-slate-400"><LoaderCircle className="h-4 w-4 animate-spin" />Cargando...</p>}
           {couponError && <p role="alert" className="mb-3 text-xs text-red-300">{couponError}</p>}
-          {!couponsLoading && !couponError && coupons.length === 0 && (
+          {!couponsLoading && !couponError && visibleCoupons.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-700 px-4 py-9 text-center">
               <Ticket className="mx-auto mb-3 h-7 w-7 text-slate-600" />
               <p className="text-xs leading-relaxed text-slate-500">Todavía no tienes cupones guardados. ¡Gira la ruleta para ganar uno!</p>
             </div>
           )}
           <ul className="space-y-3">
-            {coupons.map((coupon, index) => (
+            {visibleCoupons.map((coupon, index) => (
               <li key={coupon.id} className="group relative overflow-hidden rounded-2xl border border-violet-400/15 bg-gradient-to-r from-slate-950/90 to-violet-950/30 p-4">
                 <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-pink-400 to-violet-500" />
                 <div className="flex items-start gap-3">
@@ -383,6 +418,15 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
                       </span>
                     </div>
                     <p className="mt-1 text-xs leading-relaxed text-slate-400">{coupon.description}</p>
+                    {coupon.status === 'available' && !coupon.is_redeemed && (
+                      <button
+                        type="button"
+                        onClick={() => setRedemptionCoupon(coupon)}
+                        className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                      >
+                        Solicitar canje
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -420,6 +464,16 @@ export default function GachaWheel({ onOpenProfile }: GachaWheelProps) {
             </div>
           </section>
         </div>
+      )}
+      {redemptionCoupon && userId && (
+        <CouponRedemptionDialog
+          coupon={redemptionCoupon}
+          userId={userId}
+          onClose={() => setRedemptionCoupon(null)}
+          onSuccess={(updatedCoupon) => {
+            setCoupons((current) => current.map((item) => item.id === updatedCoupon.id ? updatedCoupon : item));
+          }}
+        />
       )}
     </section>
   );

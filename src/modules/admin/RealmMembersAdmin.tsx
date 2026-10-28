@@ -31,7 +31,7 @@ export default function RealmMembersAdmin() {
   }, []);
 
   useEffect(() => {
-    void loadData();
+    void Promise.resolve().then(loadData);
     const channel = realmMembersService.subscribe(() => void loadData());
     return () => {
       void realmMembersService.unsubscribe(channel);
@@ -86,11 +86,12 @@ export default function RealmMembersAdmin() {
   async function handleToggleMember(user: RealmRegisteredUser) {
     if (user.role === 'admin') return;
     const enable = !user.is_member;
+    if (!enable && !window.confirm(`¿Quitar a ${user.username} del Realm? Se borrarán también sus regalos, premios, recuerdos, vínculos e imágenes compartidas.`)) return;
     setBusyId(user.user_id);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await realmMembersService.setMemberEnabled(user.user_id, enable);
+      const cleanupWarning = await realmMembersService.setMemberEnabled(user.user_id, enable);
       setUsers((currentUsers) => currentUsers.map((currentUser) => (
         currentUser.user_id === user.user_id
           ? { ...currentUser, is_member: enable }
@@ -98,7 +99,7 @@ export default function RealmMembersAdmin() {
       )));
       setSuccessMessage(enable
         ? `${user.username} ya está vinculado y aparecerá en el mapa.`
-        : `${user.username} se quitó del mapa del Realm.`);
+        : cleanupWarning ?? `${user.username} se quitó del Realm y se eliminaron sus regalos, premios, recuerdos y vínculos.`);
     } catch (error) {
       console.error('Error exacto de Supabase al cambiar la vinculación del usuario:', error);
       setErrorMessage(error instanceof Error
@@ -187,13 +188,13 @@ export default function RealmMembersAdmin() {
                         type="button"
                         role="switch"
                         aria-checked={registeredUser.is_member}
-                        aria-label={`${registeredUser.is_member ? 'Quitar' : 'Mostrar'} ${registeredUser.username} ${registeredUser.is_member ? 'del' : 'en el'} mapa`}
+                        aria-label={`${registeredUser.is_member ? 'Quitar' : 'Mostrar'} ${registeredUser.username} ${registeredUser.is_member ? 'del Realm' : 'en el mapa del Realm'}`}
                         disabled={busyId === registeredUser.user_id}
                         onClick={() => void handleToggleMember(registeredUser)}
                         className={`inline-flex min-h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${registeredUser.is_member ? 'border-emerald-300/25 bg-emerald-400/10 text-emerald-200 hover:bg-red-400/10 hover:text-red-200' : 'border-violet-300/25 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20'}`}
                       >
                         {busyId === registeredUser.user_id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-                        {registeredUser.is_member ? 'Quitar del mapa' : 'Mostrar en el mapa'}
+                        {registeredUser.is_member ? 'Quitar del Realm' : 'Mostrar en el mapa'}
                       </button>
                     )}
                   </li>

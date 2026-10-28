@@ -1,84 +1,56 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { motion } from 'framer-motion';
-import { CalendarDays, Clock3, Heart, LoaderCircle, Sparkles } from 'lucide-react';
+import { Clock3, LoaderCircle, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { ADMIN_EMAIL } from '../../config/roles';
+import ContentAudienceFilter, { type ContentAudienceFilter as AudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import { timelineService } from '../../services/timelineService';
 import type { TimelineEvent } from '../../services/timelineService';
-
-interface CountdownTarget {
-  event: TimelineEvent;
-  date: Date;
-}
+import TimelineMemoryComposer from './TimelineMemoryComposer';
 
 function localDate(value: string) {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
   return new Date(year, month - 1, day);
 }
 
-function getCountdownTarget(events: TimelineEvent[], now: Date): CountdownTarget | null {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const candidates = events.flatMap((event) => {
-    const eventDate = localDate(event.event_date);
-    if (event.is_anniversary) {
-      const month = eventDate.getMonth();
-      const day = eventDate.getDate();
-      let next = new Date(now.getFullYear(), month, day);
-      if (next.getTime() < today.getTime()) next = new Date(now.getFullYear() + 1, month, day);
-      return [{ event, date: next }];
-    }
-    return eventDate.getTime() >= today.getTime() ? [{ event, date: eventDate }] : [];
-  });
-
-  return candidates.sort((left, right) => left.date.getTime() - right.date.getTime())[0] ?? null;
-}
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es', { dateStyle: 'long' }).format(localDate(value));
 }
 
-function Countdown({ target, now }: { target: CountdownTarget; now: Date }) {
-  const remaining = Math.max(0, target.date.getTime() - now.getTime());
-  const secondsTotal = Math.floor(remaining / 1000);
-  const units = [
-    { label: 'Días', value: Math.floor(secondsTotal / 86_400) },
-    { label: 'Horas', value: Math.floor((secondsTotal % 86_400) / 3_600) },
-    { label: 'Minutos', value: Math.floor((secondsTotal % 3_600) / 60) },
-    { label: 'Segundos', value: secondsTotal % 60 },
-  ];
-
-  return (
-    <article className="relative overflow-hidden rounded-3xl border border-violet-400/20 bg-gradient-to-br from-slate-900 via-violet-950/60 to-slate-900 p-6 shadow-xl shadow-violet-950/20 sm:p-8">
-      <div className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full bg-pink-500/10 blur-3xl" />
-      <div className="relative">
-        <p className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-pink-300">
-          <Heart className="h-3.5 w-3.5" /> Próximo momento especial
-        </p>
-        <h2 className="text-xl font-extrabold text-white sm:text-2xl">{target.event.title}</h2>
-        <p className="mt-1 text-xs text-slate-400">{target.event.is_anniversary ? 'Aniversario' : 'Evento especial'} · {formatDate(target.event.event_date)}</p>
-        <div className="mt-6 grid grid-cols-4 gap-2 sm:gap-4">
-          {units.map((unit) => (
-            <div key={unit.label} className="rounded-2xl border border-white/10 bg-slate-950/50 px-2 py-4 text-center backdrop-blur-md sm:px-4">
-              <p className="font-mono text-2xl font-black tabular-nums text-white sm:text-4xl">{String(unit.value).padStart(2, '0')}</p>
-              <p className="mt-1 text-[9px] uppercase tracking-wider text-slate-400 sm:text-[10px]">{unit.label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-export default function TimelineView() {
+export default function TimelineView({ user }: { user: SupabaseUser | null }) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(Boolean(user));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>('realm');
+  const [editingMemory, setEditingMemory] = useState<TimelineEvent | null>(null);
+  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
+  const visibleEvents = events.filter((event) => (
+    audienceFilter === 'relationship'
+      ? event.audience_scope === 'relationship'
+      : event.audience_scope !== 'relationship'
+  ));
+
+  async function handleDeleteMemory(memory: TimelineEvent) {
+    if (!window.confirm(`¿Eliminar el recuerdo "${memory.title}"?`)) return;
+    try {
+      await timelineService.deleteEvent(memory.id);
+      if (memory.image_path) {
+        try {
+          await timelineService.removeImage(memory.image_path);
+        } catch (storageError) {
+          console.error('El recuerdo se eliminó, pero no se pudo borrar su imagen:', storageError);
+        }
+      }
+      setEvents((current) => current.filter((event) => event.id !== memory.id));
+    } catch (error) {
+      console.error('Error al eliminar recuerdo:', error);
+      window.alert(error instanceof Error ? `No se pudo eliminar: ${error.message}` : 'No se pudo eliminar el recuerdo.');
+    }
+  }
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
+    if (!user) return;
     let active = true;
     void timelineService.getEvents()
       .then((items) => {
@@ -98,9 +70,7 @@ export default function TimelineView() {
     return () => {
       active = false;
     };
-  }, []);
-
-  const countdownTarget = useMemo(() => getCountdownTarget(events, now), [events, now]);
+  }, [reloadVersion, user]);
 
   return (
     <section aria-labelledby="timeline-title" className="mx-auto w-full max-w-5xl space-y-7">
@@ -109,38 +79,48 @@ export default function TimelineView() {
           <p className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-violet-300">
             <Sparkles className="h-3.5 w-3.5" /> Momentos que nos unen
           </p>
-          <h1 id="timeline-title" className="text-2xl font-extrabold text-white sm:text-3xl">Línea del tiempo</h1>
-          <p className="mt-2 text-sm text-slate-400">Recuerdos compartidos y fechas que esperamos con ilusión.</p>
+          <h1 id="timeline-title" className="text-2xl font-extrabold text-white sm:text-3xl">Galería de recuerdos</h1>
+          <p className="mt-2 text-sm text-slate-400">Momentos que ya vivimos y queremos conservar en el Realm.</p>
         </div>
       </header>
 
-      {countdownTarget ? (
-        <Countdown target={countdownTarget} now={now} />
+      {!user ? (
+        <p className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-center text-sm text-slate-400">Inicia sesión para ver y guardar recuerdos del Realm.</p>
       ) : (
-        <article className="rounded-3xl border border-violet-400/15 bg-slate-900/70 p-6 text-center">
-          <CalendarDays className="mx-auto mb-3 h-7 w-7 text-violet-300" />
-          <h2 className="font-bold text-slate-100">Aún no hay una fecha especial</h2>
-          <p className="mt-1 text-sm text-slate-400">El administrador puede añadir un aniversario o evento futuro desde Admin.</p>
-        </article>
+      <>
+      {editingMemory ? (
+        <TimelineMemoryComposer
+          key={editingMemory.id}
+          user={user}
+          memory={editingMemory}
+          onMemoryCreated={() => setReloadVersion((version) => version + 1)}
+          onMemoryUpdated={() => {
+            setEditingMemory(null);
+            setReloadVersion((version) => version + 1);
+          }}
+          onCancel={() => setEditingMemory(null)}
+        />
+      ) : (
+        <TimelineMemoryComposer user={user} onMemoryCreated={() => setReloadVersion((version) => version + 1)} />
       )}
-
       <section aria-labelledby="timeline-events-title">
         <div className="mb-5 flex items-center gap-2">
           <Clock3 className="h-4 w-4 text-pink-300" />
-          <h2 id="timeline-events-title" className="text-sm font-bold uppercase tracking-wider text-slate-200">Nuestros hitos</h2>
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">{events.length}</span>
+          <h2 id="timeline-events-title" className="text-sm font-bold uppercase tracking-wider text-slate-200">Nuestros momentos</h2>
+          <span className="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">{visibleEvents.length}</span>
+          <div className="ml-auto"><ContentAudienceFilter value={audienceFilter} onChange={setAudienceFilter} /></div>
         </div>
 
         {isLoading && <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-violet-200"><LoaderCircle className="h-4 w-4 animate-spin" />Cargando recuerdos...</p>}
         {errorMessage && <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-200">{errorMessage}</p>}
-        {!isLoading && !errorMessage && events.length === 0 && (
+        {!isLoading && !errorMessage && visibleEvents.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-5 py-10 text-center text-sm text-slate-400">
             Aún no hay recuerdos en la línea del tiempo.
           </div>
         )}
 
         <ol className="relative space-y-5 before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-px before:bg-gradient-to-b before:from-violet-400/60 before:via-pink-400/30 before:to-transparent sm:before:left-[19px]">
-          {events.map((event, index) => (
+          {visibleEvents.map((event, index) => (
             <motion.li
               key={event.id}
               initial={{ opacity: 0, y: 12 }}
@@ -154,16 +134,23 @@ export default function TimelineView() {
                 <div className="p-5">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <time dateTime={event.event_date} className="font-mono text-[10px] uppercase tracking-wider text-violet-300">{formatDate(event.event_date)}</time>
-                    {event.is_anniversary && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">Aniversario anual</span>}
                   </div>
                   <h3 className="text-lg font-bold text-slate-100">{event.title}</h3>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{event.description}</p>
+                  {user && (isAdmin || event.created_by === user.id) && (
+                    <div className="mt-4 flex gap-2">
+                      <button type="button" onClick={() => setEditingMemory(event)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-violet-400 hover:text-violet-200"><Pencil className="h-3.5 w-3.5" />Editar</button>
+                      <button type="button" onClick={() => void handleDeleteMemory(event)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-red-400 hover:text-red-200"><Trash2 className="h-3.5 w-3.5" />Eliminar</button>
+                    </div>
+                  )}
                 </div>
               </article>
             </motion.li>
           ))}
         </ol>
       </section>
+      </>
+      )}
     </section>
   );
 }

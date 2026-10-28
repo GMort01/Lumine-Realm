@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import type { Coupon } from './couponsService';
 import type { CouponPrize } from './couponPrizesService';
+import type { ContentAudienceFilter } from '../components/ui/ContentAudienceFilter';
 
 export interface SpinGachaResult {
   coupon: Coupon;
@@ -9,7 +10,7 @@ export interface SpinGachaResult {
 }
 
 export const gachaService = {
-  async spin(): Promise<SpinGachaResult> {
+  async spin(audienceFilter: ContentAudienceFilter = 'realm'): Promise<SpinGachaResult> {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) {
       throw authError;
@@ -18,8 +19,8 @@ export const gachaService = {
       throw new Error('Inicia sesión antes de girar la ruleta.');
     }
 
-    const { data, error } = await supabase.rpc('spin_gacha_for_user', {
-      p_user_id: user.id,
+    const { data, error } = await supabase.rpc('spin_gacha_for_current_user', {
+      p_audience_filter: audienceFilter,
     });
 
     if (error) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { supabase } from './config/supabase';
 import MainHub from './modules/hub/MainHub';
 import { giftsService } from './services/giftsService';
 import type { Gift } from './services/giftsService';
@@ -11,28 +12,57 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let requestId = 0;
 
-    async function loadGifts() {
+    async function loadGifts(hasSession: boolean) {
+      const currentRequestId = ++requestId;
+      if (!hasSession) {
+        if (isMounted) {
+          setGifts([]);
+          setErrorMessage(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setErrorMessage(null);
       try {
         const data = await giftsService.getAllGifts();
-        if (isMounted) {
+        if (isMounted && currentRequestId === requestId) {
           setGifts(data);
         }
       } catch (error) {
         console.error('Error al cargar los regalos:', error);
-        if (isMounted) {
+        if (isMounted && currentRequestId === requestId) {
           setErrorMessage('No se pudieron cargar los regalos. Revisa la conexión e inténtalo de nuevo.');
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && currentRequestId === requestId) {
           setLoading(false);
         }
       }
     }
 
-    void loadGifts();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      void loadGifts(Boolean(session));
+    });
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      void loadGifts(Boolean(data.session));
+    }).catch((error: unknown) => {
+      console.error('Error al recuperar la sesión para cargar el inventario:', error);
+      if (isMounted) {
+        setErrorMessage('No se pudo comprobar la sesión para cargar los regalos.');
+        setLoading(false);
+      }
+    });
+
     return () => {
       isMounted = false;
+      requestId += 1;
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -41,6 +71,8 @@ export default function App() {
       <MainHub
         gifts={gifts}
         onGiftCreated={(gift) => setGifts((currentGifts) => [gift, ...currentGifts])}
+        onGiftUpdated={(gift) => setGifts((currentGifts) => currentGifts.map((current) => current.id === gift.id ? gift : current))}
+        onGiftDeleted={(giftId) => setGifts((currentGifts) => currentGifts.filter((gift) => gift.id !== giftId))}
       />
       {loading && (
         <p

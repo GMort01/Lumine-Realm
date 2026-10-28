@@ -13,6 +13,10 @@ function jsonResponse(body: unknown, status: number) {
   });
 }
 
+function isAudienceFilter(value: unknown): value is 'realm' | 'relationship' {
+  return value === 'realm' || value === 'relationship';
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -28,8 +32,7 @@ Deno.serve(async (request: Request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+  if (!supabaseUrl || !anonKey) {
     console.error('Supabase function environment is incomplete.');
     return jsonResponse({ error: 'Server configuration error' }, 500);
   }
@@ -44,11 +47,30 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: 'Invalid authentication' }, 401);
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+  let payload: unknown = {};
+  if (request.body) {
+    try {
+      payload = await request.json();
+    } catch (error) {
+      console.error('Gacha request body is invalid JSON:', error);
+      return jsonResponse({ error: 'Invalid request body' }, 400);
+    }
+  }
+  const audienceFilter = (
+    typeof payload === 'object'
+    && payload !== null
+    && 'audienceFilter' in payload
+  ) ? payload.audienceFilter : 'realm';
+  if (!isAudienceFilter(audienceFilter)) {
+    return jsonResponse({ error: 'Invalid audience filter' }, 400);
+  }
+
+  const userClient = createClient(supabaseUrl, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const { data, error } = await adminClient.rpc('spin_gacha_for_user', {
-    p_user_id: user.id,
+  const { data, error } = await userClient.rpc('spin_gacha_for_current_user', {
+    p_audience_filter: audienceFilter,
   });
 
   if (error) {

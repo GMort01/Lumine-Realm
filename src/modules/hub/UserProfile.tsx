@@ -4,8 +4,13 @@ import { Award, CalendarDays, Check, Crown, Gift, Heart, LoaderCircle, LogIn, Lo
 import { supabase } from '../../config/supabase';
 import { couponsService } from '../../services/couponsService';
 import type { Coupon } from '../../services/couponsService';
+import CouponRedemptionDialog from '../../components/ui/CouponRedemptionDialog';
+import ContentAudienceFilter from '../../components/ui/ContentAudienceFilter';
+import type { ContentAudienceFilter as AudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import { profilesService } from '../../services/profilesService';
 import type { PlayerProfile } from '../../services/profilesService';
+import { realmMembersService } from '../../services/realmMembersService';
+import type { RealmMember } from '../../services/realmMembersService';
 
 type AuthMode = 'login' | 'signup';
 
@@ -41,38 +46,51 @@ export default function UserProfile({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [country, setCountry] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponAudienceFilter, setCouponAudienceFilter] = useState<AudienceFilter>('realm');
+  const [redemptionCoupon, setRedemptionCoupon] = useState<Coupon | null>(null);
   const [couponsLoading, setCouponsLoading] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
-  const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editUsername, setEditUsername] = useState('');
   const [editCountry, setEditCountry] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [requestedCoupons, setRequestedCoupons] = useState<Coupon[]>([]);
+  const [realmMembers, setRealmMembers] = useState<RealmMember[]>([]);
   const [adminCouponsLoading, setAdminCouponsLoading] = useState(false);
   const [adminCouponError, setAdminCouponError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const visibleCoupons = coupons.filter((coupon) => coupon.audience_scope === couponAudienceFilter);
+  const memberNames = new Map(realmMembers.map((member) => [member.user_id, member.username]));
 
   useEffect(() => {
+    let active = true;
     if (!user) {
-      setCoupons([]);
-      setCouponError(null);
-      setCouponsLoading(false);
-      return;
+      void Promise.resolve().then(() => {
+        if (!active) return;
+        setCoupons([]);
+        setCouponError(null);
+        setCouponsLoading(false);
+      });
+      return () => {
+        active = false;
+      };
     }
 
-    let active = true;
-    setCouponsLoading(true);
-    setCouponError(null);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setCouponsLoading(true);
+      setCouponError(null);
+    });
 
     void couponsService.getMyCoupons()
       .then((items) => {
@@ -95,18 +113,26 @@ export default function UserProfile({
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
+    let active = true;
     if (!user) {
-      setProfile(null);
-      setRequestedCoupons([]);
-      return;
+      void Promise.resolve().then(() => {
+        if (!active) return;
+        setProfile(null);
+        setRequestedCoupons([]);
+      });
+      return () => {
+        active = false;
+      };
     }
 
-    let active = true;
-    setProfileLoading(true);
-    setProfileError(null);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setProfileLoading(true);
+      setProfileError(null);
+    });
     void profilesService.getMyProfile(user.id)
       .then((result) => {
         if (active) {
@@ -129,20 +155,36 @@ export default function UserProfile({
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
+    let active = true;
     if (!user || !isAdmin) {
-      setRequestedCoupons([]);
-      return;
+      void Promise.resolve().then(() => {
+        if (active) {
+          setRequestedCoupons([]);
+          setRealmMembers([]);
+        }
+      });
+      return () => {
+        active = false;
+      };
     }
 
-    let active = true;
-    setAdminCouponsLoading(true);
-    setAdminCouponError(null);
-    void couponsService.getRequestedCouponsForAdmin()
-      .then((items) => {
-        if (active) setRequestedCoupons(items);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setAdminCouponsLoading(true);
+      setAdminCouponError(null);
+    });
+    void Promise.all([
+      couponsService.getRequestedCouponsForAdmin(),
+      realmMembersService.getMembers(),
+    ])
+      .then(([items, members]) => {
+        if (active) {
+          setRequestedCoupons(items);
+          setRealmMembers(members);
+        }
       })
       .catch((error: unknown) => {
         console.error('Error al cargar solicitudes de canje:', error);
@@ -155,7 +197,7 @@ export default function UserProfile({
     return () => {
       active = false;
     };
-  }, [user?.id, isAdmin]);
+  }, [user, isAdmin]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -177,15 +219,32 @@ export default function UserProfile({
               username: nickname.trim(),
               nickname: nickname.trim(),
               country,
-              avatar_url: avatarUrl.trim(),
             },
           },
         });
         if (error) {
           throw error;
         }
+        if (data.session && data.user && avatarFile) {
+          try {
+            const uploadedAvatar = await profilesService.uploadAvatar(data.user.id, avatarFile);
+            await profilesService.updateMyProfile(data.user.id, {
+              username: nickname,
+              country,
+              avatar_url: uploadedAvatar,
+            });
+          } catch (avatarError) {
+            console.error('La cuenta se creó, pero no se pudo guardar el avatar:', avatarError);
+            setProfileError('La cuenta se creó, pero no se pudo subir el avatar. Puedes intentarlo desde Editar perfil.');
+          }
+        }
         if (!data.session) {
           setAuthMessage('Revisa tu correo para confirmar tu cuenta y luego inicia sesión.');
+          if (avatarFile) {
+            setAuthMessage('Revisa tu correo para confirmar la cuenta. Podrás subir el avatar al iniciar sesión.');
+          }
+        } else {
+          setAuthMessage('Cuenta creada. Ya puedes entrar al Realm.');
         }
       }
     } catch (error) {
@@ -193,24 +252,6 @@ export default function UserProfile({
       setFormError(authMode === 'login'
         ? 'No se pudo iniciar sesión. Revisa tu correo y contraseña.'
         : 'No se pudo crear la cuenta. Verifica los datos e inténtalo de nuevo.');
-    }
-  }
-
-  async function handleRequestRedemption(couponId: string) {
-    if (redeemingId) {
-      return;
-    }
-    setRedeemingId(couponId);
-    setCouponError(null);
-
-    try {
-      const updatedCoupon = await couponsService.requestRedemption(couponId);
-      setCoupons((current) => current.map((coupon) => coupon.id === updatedCoupon.id ? updatedCoupon : coupon));
-    } catch (error) {
-      console.error('Error al solicitar canje del cupón:', error);
-      setCouponError('No se pudo solicitar el canje. Puede que ya se haya solicitado.');
-    } finally {
-      setRedeemingId(null);
     }
   }
 
@@ -225,9 +266,12 @@ export default function UserProfile({
       const updatedProfile = await profilesService.updateMyProfile(user.id, {
         username: editUsername,
         country: editCountry,
-        avatar_url: editAvatarUrl,
+        avatar_url: editAvatarFile
+          ? await profilesService.uploadAvatar(user.id, editAvatarFile)
+          : editAvatarUrl,
       });
       setProfile(updatedProfile);
+      setEditAvatarFile(null);
       setIsEditingProfile(false);
       setProfileMessage('Perfil actualizado correctamente.');
     } catch (error) {
@@ -311,15 +355,9 @@ export default function UserProfile({
                   />
                 </div>
                 <div>
-                  <label htmlFor="profile-avatar" className="mb-1.5 block text-xs font-medium text-slate-300">URL de Avatar <span className="text-slate-500">(opcional)</span></label>
-                  <input
-                    id="profile-avatar"
-                    type="url"
-                    value={avatarUrl}
-                    onChange={(event) => setAvatarUrl(event.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/15"
-                    placeholder="https://ejemplo.com/avatar.jpg"
-                  />
+                  <label htmlFor="profile-avatar" className="mb-1.5 block text-xs font-medium text-slate-300">Avatar <span className="text-slate-500">(opcional)</span></label>
+                  <input id="profile-avatar" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)} className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-violet-200" />
+                  <p className="mt-1 text-[10px] text-slate-500">{avatarFile ? avatarFile.name : 'JPG, PNG, WebP, GIF o AVIF · máximo 5 MB'}</p>
                 </div>
               </>
             )}
@@ -490,16 +528,19 @@ export default function UserProfile({
             </h3>
             <p className="mt-1 text-xs text-slate-500">Premios obtenidos en la Ruleta Gacha.</p>
           </div>
-          <span className="rounded-full border border-pink-400/15 bg-pink-400/10 px-3 py-1 font-mono text-xs text-pink-200">{coupons.length}</span>
+          <div className="flex items-center gap-3">
+            <ContentAudienceFilter value={couponAudienceFilter} onChange={setCouponAudienceFilter} />
+            <span className="rounded-full border border-pink-400/15 bg-pink-400/10 px-3 py-1 font-mono text-xs text-pink-200">{visibleCoupons.length}</span>
+          </div>
         </div>
 
         {couponsLoading && <p role="status" className="flex items-center gap-2 py-6 text-sm text-slate-400"><LoaderCircle className="h-4 w-4 animate-spin" />Cargando cupones...</p>}
         {couponError && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">{couponError}</p>}
-        {!couponsLoading && coupons.length === 0 && !couponError && (
-          <p className="rounded-2xl border border-dashed border-slate-700 px-5 py-9 text-center text-sm text-slate-500">Todavía no tienes cupones guardados. ¡Prueba tu suerte en la Ruleta Gacha!</p>
+        {!couponsLoading && visibleCoupons.length === 0 && !couponError && (
+          <p className="rounded-2xl border border-dashed border-slate-700 px-5 py-9 text-center text-sm text-slate-500">No tienes cupones de {couponAudienceFilter === 'realm' ? 'grupo' : 'pareja'} todavía. ¡Prueba tu suerte en la ruleta!</p>
         )}
         <ul className="grid gap-3 md:grid-cols-2">
-          {coupons.map((coupon) => (
+          {visibleCoupons.map((coupon) => (
             <li key={coupon.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-violet-400/15 bg-slate-950/50 p-4 sm:flex-row sm:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -531,11 +572,10 @@ export default function UserProfile({
               ) : (
                 <button
                   type="button"
-                  disabled={redeemingId !== null}
-                  onClick={() => void handleRequestRedemption(coupon.id)}
+                  onClick={() => setRedemptionCoupon(coupon)}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-pink-400/20 bg-pink-500/10 px-3 py-2 text-xs font-semibold text-pink-200 transition hover:bg-pink-500/20 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {redeemingId === coupon.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Ticket className="h-3.5 w-3.5" />}
+                  <Ticket className="h-3.5 w-3.5" />
                   Solicitar Canje
                 </button>
               )}
@@ -568,6 +608,13 @@ export default function UserProfile({
                   <p className="font-semibold text-amber-800">{coupon.title}</p>
                   <p className="mt-1 text-xs text-slate-400">{coupon.description}</p>
                   <p className="mt-1 font-mono text-[10px] text-slate-600">Jugador: {coupon.user_id}</p>
+                  <p className="mt-1 text-xs text-amber-200">
+                    Audiencia: {coupon.audience_scope === 'relationship' ? 'Pareja' : 'Grupo'} · Destino: {coupon.redemption_for_all
+                      ? 'Todos los miembros'
+                      : coupon.redemption_target_user_id
+                        ? memberNames.get(coupon.redemption_target_user_id) ?? coupon.redemption_target_user_id
+                        : 'Sin destinatario'}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -582,6 +629,17 @@ export default function UserProfile({
             ))}
           </ul>
         </section>
+      )}
+
+      {redemptionCoupon && (
+        <CouponRedemptionDialog
+          coupon={redemptionCoupon}
+          userId={user.id}
+          onClose={() => setRedemptionCoupon(null)}
+          onSuccess={(updatedCoupon) => {
+            setCoupons((current) => current.map((coupon) => coupon.id === updatedCoupon.id ? updatedCoupon : coupon));
+          }}
+        />
       )}
 
       {isEditingProfile && (
@@ -620,8 +678,9 @@ export default function UserProfile({
                 />
               </div>
               <div>
-                <label htmlFor="edit-profile-avatar" className="mb-1.5 block text-xs font-medium text-slate-300">URL del avatar <span className="text-slate-500">(opcional)</span></label>
-                <input id="edit-profile-avatar" type="url" value={editAvatarUrl} onChange={(event) => setEditAvatarUrl(event.target.value)} placeholder="https://..." className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400" />
+                <label htmlFor="edit-profile-avatar" className="mb-1.5 block text-xs font-medium text-slate-300">Cambiar avatar <span className="text-slate-500">(opcional)</span></label>
+                <input id="edit-profile-avatar" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" onChange={(event) => setEditAvatarFile(event.target.files?.[0] ?? null)} className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-violet-200" />
+                <p className="mt-1 text-[10px] text-slate-500">{editAvatarFile ? editAvatarFile.name : 'JPG, PNG, WebP, GIF o AVIF · máximo 5 MB'}</p>
               </div>
               {profileError && <p role="alert" className="text-xs text-red-300">{profileError}</p>}
               <button type="submit" disabled={isSavingProfile || profileLoading} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 px-4 py-3 text-sm font-bold text-white transition hover:brightness-110 disabled:opacity-60">

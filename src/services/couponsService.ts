@@ -13,9 +13,14 @@ export interface Coupon {
   status: CouponStatus;
   expires_at: string | null;
   created_at: string;
+  audience_scope: 'realm' | 'relationship';
+  relationship_id: string | null;
+  redemption_target_user_id: string | null;
+  redemption_for_all: boolean;
 }
 
 export type NewCoupon = Pick<Coupon, 'title' | 'description'>;
+export type CouponAudienceFilter = 'realm' | 'relationship';
 
 async function getAuthenticatedUserId() {
   const { data, error } = await supabase.auth.getUser();
@@ -30,7 +35,7 @@ async function getAuthenticatedUserId() {
 }
 
 export const couponsService = {
-  async getMyCoupons(): Promise<Coupon[]> {
+  async getMyCoupons(audienceFilter?: CouponAudienceFilter): Promise<Coupon[]> {
     const userId = await getAuthenticatedUserId();
     const { data, error } = await supabase
       .from('coupons')
@@ -38,30 +43,30 @@ export const couponsService = {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      throw error;
-    }
-
-    return data as Coupon[];
+    if (error) throw error;
+    const coupons = data as Coupon[];
+    return audienceFilter
+      ? coupons.filter((coupon) => coupon.audience_scope === audienceFilter)
+      : coupons;
   },
 
-  async requestRedemption(couponId: string): Promise<Coupon> {
-    const userId = await getAuthenticatedUserId();
-    const { data, error } = await supabase
-      .from('coupons')
-      .update({ status: 'requested' })
-      .eq('id', couponId)
-      .eq('user_id', userId)
-      .eq('status', 'available')
-      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-      .select()
-      .maybeSingle();
+  async requestRedemption(
+    couponId: string,
+    targetUserId: string | null,
+    forAll = false,
+  ): Promise<Coupon> {
+    await getAuthenticatedUserId();
+    const { data, error } = await supabase.rpc('request_coupon_redemption', {
+      p_coupon_id: couponId,
+      p_target_user_id: targetUserId,
+      p_for_all: forAll,
+    });
 
     if (error) {
       throw error;
     }
-    if (!data) {
-      throw new Error('El cupón ya fue solicitado o no está disponible.');
+    if (!data || typeof data !== 'object' || !('id' in data)) {
+      throw new Error('La respuesta del servidor al solicitar el canje no es válida.');
     }
 
     return data as Coupon;
@@ -98,23 +103,15 @@ export const couponsService = {
       throw new Error('Solo el administrador puede aprobar el canje.');
     }
 
-    const { data, error } = await supabase
-      .from('coupons')
-      .update({
-        status: 'redeemed',
-        is_redeemed: true,
-        redeemed_at: new Date().toISOString(),
-      })
-      .eq('id', couponId)
-      .eq('status', 'requested')
-      .select()
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('admin_approve_coupon_redemption', {
+      p_coupon_id: couponId,
+    });
 
     if (error) {
       throw error;
     }
-    if (!data) {
-      throw new Error('La solicitud ya fue atendida o no está disponible.');
+    if (!data || typeof data !== 'object' || !('id' in data)) {
+      throw new Error('La respuesta del servidor al aprobar el canje no es válida.');
     }
 
     return data as Coupon;

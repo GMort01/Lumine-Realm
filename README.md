@@ -31,29 +31,37 @@ Está construida con React y TypeScript. Supabase proporciona autenticación, ba
 - Tarjetas de regalos con título, descripción, categoría, fecha y rareza.
 - Rarezas visuales: común, rara, épica y legendaria.
 - Modal de detalle para consultar cada recuerdo.
-- El administrador puede crear recuerdos y adjuntar medios.
+- Los miembros pueden aportar regalos y decidir si son para el Realm, una persona o su vínculo de pareja.
+- La administración de regalos se realiza en Inventario; cada autor puede editar o eliminar sus aportes.
 
 ### Arcade y ruleta
 
 - Ruleta con segmentos numerados y una lista que relaciona cada número con el nombre del premio.
 - Animación de giro y presentación del premio al terminar.
-- Los premios se obtienen mediante la función PostgreSQL `spin_gacha_for_user`; el cliente no elige el resultado.
-- Los cupones ganados se guardan en la colección del usuario y muestran su estado de canje.
+- Los premios se obtienen mediante la función PostgreSQL `spin_gacha_for_current_user`; el cliente no elige el resultado.
+- Cada miembro puede proponer premios y limitar quién puede ganarlos.
+- En Minijuegos, los autores pueden editar, activar, desactivar o eliminar sus premios.
+- Los filtros **Grupo** y **Pareja** separan la audiencia visible en Inventario, Minijuegos y recuerdos; los aportes individuales accesibles aparecen en Grupo.
+- La gestión de premios está plegada en un menú, y cada ruleta admite como máximo ocho premios activos.
+- Los cupones de Grupo permiten solicitar el canje para un miembro o para todos; los de Pareja solo se canjean con la pareja vinculada.
+- La colección de cupones se filtra también por Grupo o Pareja, y la solicitud se puede iniciar desde Minijuegos o Perfil.
 
 ### Línea del tiempo
 
-- Feed cronológico de hitos con descripción, fecha e imagen opcional.
-- Cuenta regresiva hacia el próximo evento especial.
-- Los eventos marcados como aniversario se repiten cada año.
+- Galería cronológica de recuerdos que ya ocurrieron, con descripción y foto opcional.
+- Cualquier miembro puede aportar un recuerdo para el Realm, una persona o su pareja.
+- Los recuerdos se gestionan desde esta sección y solo admiten fechas presentes o pasadas.
 - Las imágenes se guardan en un bucket privado de Supabase Storage y se muestran mediante enlaces firmados.
 
 ### Perfil y administración
 
 - Registro e inicio de sesión con Supabase Auth.
-- Edición del nombre de usuario, país y URL del avatar.
-- Solicitud de canje de cupones y aprobación por el administrador.
+- Edición del nombre de usuario, país y avatar mediante carga de imagen.
+- Solicitud de canje de cupones con destinatario y aprobación por el administrador.
+- Selector persistente de modo claro u oscuro, disponible desde la barra superior.
 - Gestión de miembros mediante invitaciones por correo.
-- El administrador puede gestionar regalos, premios, hitos y el estado de conexión del Realm.
+- Directorio privado del Realm con país, avatar, antigüedad, perfiles emergentes, control individual de visibilidad en el mapa e invitaciones mutuas para formar o terminar un vínculo de pareja.
+- El administrador conserva herramientas de moderación e invitaciones; los miembros pueden crear contenido compartido.
 - Las invitaciones quedan guardadas en la base de datos; la aplicación no envía correos automáticamente. El administrador comparte el enlace de la aplicación con la persona invitada.
 
 ## Tecnologías
@@ -125,9 +133,6 @@ Antes de ejecutar las migraciones incluidas, deben existir las tablas y columnas
 - `public.profiles`, asociada a `auth.users`.
 - `public.gifts`, con los campos que consume `giftsService`.
 - `public.coupons`, con los campos de propietario, premio y canje que consume `couponsService`.
-- La función PostgreSQL `public.spin_gacha_for_user(p_user_id uuid)`.
-
-La función de la ruleta debe elegir un premio activo, crear el cupón en el servidor y devolver los datos del resultado. Si todavía no está creada, aplica primero el SQL seguro de la ruleta correspondiente al esquema de tu proyecto.
 
 ### 3. Ejecuta las migraciones incluidas
 
@@ -139,10 +144,20 @@ En Supabase **SQL Editor**, ejecuta los archivos de `supabase/migrations` en ord
 4. `20261028010000_timeline_and_admin_tools.sql`
 5. `20261028011000_admin_registered_users_and_auto_link.sql`
 6. `20261028012000_admin_direct_profile_and_member_access.sql`
+7. `20261028013000_group_spaces_and_redemption.sql`
+8. `20261028014000_content_management_and_audience_filters.sql`
+9. `20261028015000_gift_management_permissions.sql`
+10. `20261028016000_coupon_targets_map_visibility_and_wheel_limits.sql`
 
-La migración `090` crea el helper `is_realm_member_or_admin()`, que utiliza la migración `100`. La migración `110` añade las funciones de gestión de usuarios e invitaciones. La migración `120` prepara el correo sincronizado en los perfiles y los permisos RLS para que el panel Admin pueda consultar perfiles y añadir/quitar miembros directamente. Respeta el orden. Si estas migraciones ya se ejecutaron en el proyecto, no hace falta volver a aplicarlas.
+La migración `090` crea el helper `is_realm_member_or_admin()` utilizado por políticas posteriores. La migración `110` añade las funciones de gestión de usuarios e invitaciones. La migración `120` prepara el correo sincronizado en los perfiles y los permisos RLS para que el panel Admin pueda consultar perfiles y añadir/quitar miembros directamente. Respeta el orden. Si estas migraciones ya se ejecutaron en el proyecto, no hace falta volver a aplicarlas.
 
-Las migraciones configuran políticas RLS, permisos para editar perfiles y solicitar/aprobar canjes, estado del Realm, invitaciones, premios, eventos, bucket privado para imágenes y tablas publicadas en Realtime.
+La migración `130` agrega vínculos de pareja, directorio y audiencias privadas para regalos, premios y recuerdos. También crea el bucket de avatares, permite aportes de miembros y añade RPC protegidas para girar la ruleta y aprobar canjes sin depender del `SELECT` posterior a un cambio de estado. Aplica la migración en Supabase antes de desplegar esta versión. Los cambios de migración se aplican una sola vez; no vuelvas a ejecutar una migración que ya se aplicó.
+
+La migración `140` habilita edición y eliminación por autor, filtros de audiencia en la ruleta, y una función administrativa que retira a un miembro junto con sus contenidos, vínculos y archivos asociados. Si ya aplicaste la `130`, ejecuta ahora la `140` y después la `150`.
+
+La migración `150` concede a los usuarios autenticados los permisos SQL de actualización y eliminación de regalos. RLS sigue limitando estas operaciones al autor del regalo o al Game Master. Si ya aplicaste la `140`, ejecuta solo la `150`.
+
+La migración `160` añade la audiencia y el destinatario de los cupones, la RPC protegida para solicitar canjes, un límite en base de datos de ocho premios activos por ruleta y las preferencias personales para ocultar miembros del mapa. También reemplaza la RPC de giro para separar Grupo y Pareja e incluye los premios individuales accesibles en Grupo. Si ya aplicaste la `150`, ejecuta solo la `160` antes de desplegar esta versión. No vuelvas a ejecutar una migración que ya se aplicó.
 
 ### 4. Configura la cuenta administradora
 
@@ -155,8 +170,9 @@ Para usar otro correo, actualiza el valor en el código y ajusta las políticas 
 - Registra e inicia sesión con la cuenta administradora.
 - Invita a los miembros desde **Admin → Miembros del Realm**.
 - Las cuentas existentes se vinculan directamente; si todavía no tienen cuenta, la invitación pendiente las vincula automáticamente cuando se registran con ese correo.
-- Crea premios y recuerdos desde el panel de administración.
-- Crea hitos en la línea del tiempo y marca los que deban repetirse como aniversario.
+- Los miembros pueden aportar regalos desde **Inventario**, premios desde **Minijuegos** y recuerdos fechados desde **Línea del tiempo**.
+- El contenido puede dirigirse a todo el Realm, a un miembro concreto o a un vínculo de pareja aceptado.
+- Las invitaciones de pareja se envían dentro de **Comunidad** y requieren aceptación de la otra persona.
 
 ## Estructura del proyecto
 
@@ -177,7 +193,8 @@ src/
 │   └── hub/
 │       ├── MainHub.tsx        # Navegación principal y pestañas
 │       ├── WorldMapHome.tsx   # Mapa compartido
-│       ├── TimelineView.tsx   # Hitos y cuenta regresiva
+│       ├── TimelineView.tsx   # Galería de recuerdos pasados
+│       ├── RealmDirectory.tsx # Directorio y vínculos de pareja
 │       └── UserProfile.tsx    # Auth, perfil y canje
 ├── services/                  # Acceso a Supabase organizado por dominio
 └── index.css                  # Estilos globales y tema Tailwind
@@ -208,9 +225,13 @@ npm run build
 - Las credenciales de Supabase se leen desde variables `VITE_*`. Todo valor `VITE_*` llega al navegador y no debe contener secretos.
 - No uses una clave `service_role` en el frontend.
 - Mantén RLS habilitado en las tablas expuestas por Supabase y revisa las políticas antes de publicar.
-- La ruleta debe usar la función SQL segura `spin_gacha_for_user`; no confíes al navegador la selección del ganador ni la creación del cupón.
+- La ruleta usa la función SQL segura `spin_gacha_for_current_user`; valida al usuario de sesión y no confía al navegador la selección del ganador ni la creación del cupón.
+- Los canjes se solicitan mediante `request_coupon_redemption`; la interfaz no actualiza directamente el estado del cupón. Para premios de Grupo, el servidor valida que el destinatario pertenezca al Realm.
+- Cada usuario controla sus propios miembros ocultos mediante `realm_map_hidden_members`; esta preferencia no cambia la pertenencia del Realm ni el mapa de otras personas.
 - El correo de administrador está fijado en el código y en políticas SQL. Si se cambia, actualiza ambas partes.
-- El bucket de imágenes de la línea del tiempo es privado. Las imágenes se consultan con URLs firmadas temporales.
+- Los buckets de imágenes de recuerdos y archivos de regalos son privados. Su lectura se filtra mediante las audiencias y se consulta con URLs firmadas temporales.
+- Los avatares se guardan en el bucket público `profile-avatars`; cada usuario solo puede subir o modificar archivos bajo su propia carpeta.
+- Los cupones se aprueban mediante `admin_approve_coupon_redemption`, que comprueba el rol y devuelve el resultado sin depender de un `SELECT` bloqueado por RLS después del cambio de estado.
 
 ## Mapa y atribución
 
@@ -234,7 +255,7 @@ Los marcadores se calculan a partir del país guardado en cada perfil y represen
 
 ### La ruleta no puede girar
 
-- Comprueba que `public.spin_gacha_for_user(p_user_id uuid)` exista y esté accesible por RPC para usuarios autenticados.
+- Confirma que la migración `20261028013000_group_spaces_and_redemption.sql` esté aplicada y que exista la RPC `public.spin_gacha_for_current_user()`.
 - Asegúrate de que haya al menos dos premios activos y que el catálogo no exceda los ocho espacios de la interfaz.
 - Revisa los errores de la función en Supabase; la selección debe realizarse en el servidor.
 

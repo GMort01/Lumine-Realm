@@ -194,6 +194,7 @@ function formatDistance(distanceKm: number) {
 export default function WorldMapHome({ user }: WorldMapHomeProps) {
   const [now, setNow] = useState(() => new Date());
   const [members, setMembers] = useState<RealmMember[]>([]);
+  const [hiddenMemberIds, setHiddenMemberIds] = useState<Set<string>>(() => new Set());
   const [invitations, setInvitations] = useState<RealmInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(Boolean(user));
   const [isAccepting, setIsAccepting] = useState<string | null>(null);
@@ -203,18 +204,22 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
   const loadRealmData = useCallback(async () => {
     if (!user) {
       setMembers([]);
+      setHiddenMemberIds(new Set());
       setInvitations([]);
       setIsLoading(false);
       return;
     }
 
+    setIsLoading(true);
     try {
-      const [nextMembers, nextInvitations] = await Promise.all([
+      const [nextMembers, nextInvitations, hiddenIds] = await Promise.all([
         realmMembersService.getMembers(),
         user.email ? realmMembersService.getMyPendingInvitations(user.email) : Promise.resolve([]),
+        realmMembersService.getHiddenMapMemberIds(),
       ]);
       setMembers(nextMembers);
       setInvitations(nextInvitations);
+      setHiddenMemberIds(hiddenIds);
       setStatusError(null);
     } catch (error) {
       console.error('Error al cargar miembros del Realm:', error);
@@ -230,10 +235,16 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
   }, []);
 
   useEffect(() => {
-    setIsLoading(Boolean(user));
-    void loadRealmData();
-    const channel = user ? realmMembersService.subscribe(() => void loadRealmData()) : null;
+    let active = true;
+    const scheduleLoad = () => {
+      void Promise.resolve().then(() => {
+        if (active) void loadRealmData();
+      });
+    };
+    scheduleLoad();
+    const channel = user ? realmMembersService.subscribe(scheduleLoad) : null;
     return () => {
+      active = false;
       if (channel) void realmMembersService.unsubscribe(channel);
     };
   }, [loadRealmData, user]);
@@ -242,12 +253,16 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
     () => members.map((member) => resolveMember(member, user)),
     [members, user],
   );
+  const visibleMembers = useMemo(
+    () => resolvedMembers.filter((member) => member.user_id === user?.id || !hiddenMemberIds.has(member.user_id)),
+    [hiddenMemberIds, resolvedMembers, user],
+  );
   const mappedMembers = useMemo(
-    () => resolvedMembers.flatMap((member) => {
+    () => visibleMembers.flatMap((member) => {
       const location = findCountryLocation(member.countryName);
       return location ? [{ member, location }] : [];
     }),
-    [resolvedMembers],
+    [visibleMembers],
   );
   const currentMember = mappedMembers.find(({ member }) => member.user_id === user?.id);
   const memberDistances = useMemo(() => {
@@ -283,7 +298,7 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
         memberName: member.displayName,
       }))
     : [];
-  const membersNotMapped = resolvedMembers.length - mappedMembers.length;
+  const membersNotMapped = visibleMembers.length - mappedMembers.length;
 
   async function handleAcceptInvitation(invitation: RealmInvitation) {
     setIsAccepting(invitation.id);
@@ -316,7 +331,7 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
           </div>
           <div className="flex items-center gap-2 rounded-full border border-violet-300/40 bg-white/60 px-4 py-2 text-xs text-violet-800">
             <Heart className="h-3.5 w-3.5 animate-pulse fill-pink-400/30 text-pink-300" />
-            {isLoading ? 'Sincronizando Realm...' : `${resolvedMembers.length} ${resolvedMembers.length === 1 ? 'miembro' : 'miembros'} aceptados`}
+            {isLoading ? 'Sincronizando Realm...' : `${visibleMembers.length} ${visibleMembers.length === 1 ? 'miembro visible' : 'miembros visibles'} en tu mapa`}
           </div>
         </div>
         {statusError && <p role="alert" className="relative mt-3 text-xs text-amber-200">{statusError}</p>}
@@ -462,9 +477,9 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
         <p role="status" className="flex items-center justify-center gap-2 py-4 text-sm text-violet-200">
           <LoaderCircle className="h-4 w-4 animate-spin" /> Cargando miembros...
         </p>
-      ) : resolvedMembers.length > 0 ? (
+      ) : visibleMembers.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {resolvedMembers.map((member, index) => {
+          {visibleMembers.map((member, index) => {
             const location = findCountryLocation(member.countryName);
             const isCurrentUser = member.user_id === user?.id;
             const localTime = location ? formatLocalTime(now, location.timezone) : null;
