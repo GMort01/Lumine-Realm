@@ -25,6 +25,7 @@ import type { Coupon } from '../../services/couponsService';
 
 const prizeColors = ['#a98bb6', '#d89aaa', '#9aa8c3', '#cf8b85', '#d4b56d', '#8cb59d', '#82afbd', '#ba8aaa'];
 const MAX_PRIZES = prizeColors.length;
+const SPIN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 interface GachaWheelProps {
   onOpenProfile: () => void;
@@ -51,6 +52,10 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
   const [spinError, setSpinError] = useState<string | null>(null);
   const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
   const [redemptionCoupon, setRedemptionCoupon] = useState<Coupon | null>(null);
+  const [lastSpinAt, setLastSpinAt] = useState<string | null>(null);
+  const [cooldownNow, setCooldownNow] = useState(() => Date.now());
+  const [cooldownLoading, setCooldownLoading] = useState(false);
+  const [cooldownError, setCooldownError] = useState<string | null>(null);
 
   const visiblePrizes = prizesOwnerId === userId ? prizes : [];
   const visibleCoupons = couponsOwnerId === userId
@@ -62,6 +67,13 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
       : prize.audience_scope !== 'relationship'
   ));
   const hasOtherAudiencePrizes = visiblePrizes.length > 0 && filteredPrizes.length === 0;
+  const cooldownRemainingMs = lastSpinAt
+    ? Math.max(0, new Date(lastSpinAt).getTime() + SPIN_COOLDOWN_MS - cooldownNow)
+    : 0;
+  const cooldownActive = !isAdmin && cooldownRemainingMs > 0;
+  const cooldownHours = Math.floor(cooldownRemainingMs / 3_600_000);
+  const cooldownMinutes = Math.floor((cooldownRemainingMs % 3_600_000) / 60_000);
+  const cooldownSeconds = Math.floor((cooldownRemainingMs % 60_000) / 1_000);
 
   const wheelBackground = filteredPrizes.length
     ? `conic-gradient(${filteredPrizes.map((_, index) => {
@@ -104,6 +116,38 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
       active = false;
       subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) {
+        setCooldownLoading(true);
+        setCooldownError(null);
+      }
+    });
+    void gachaService.getLastSpinAt(audienceFilter)
+      .then((value) => {
+        if (active) setLastSpinAt(value);
+      })
+      .catch((error: unknown) => {
+        console.error('Error al consultar el límite diario de la ruleta:', error);
+        if (active) setCooldownError('No se pudo comprobar el tiempo de espera. Inténtalo de nuevo.');
+      })
+      .finally(() => {
+        if (active) setCooldownLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId, audienceFilter]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCooldownNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -156,7 +200,7 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
   }, [userId, audienceFilter]);
 
   async function spinWheel() {
-    if (isSpinning || filteredPrizes.length === 0 || filteredPrizes.length > MAX_PRIZES) {
+    if (isSpinning || cooldownLoading || cooldownError || cooldownActive || filteredPrizes.length === 0 || filteredPrizes.length > MAX_PRIZES) {
       return;
     }
 
@@ -179,6 +223,8 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
       setPrizes(result.prizes);
       setWonPrize(result.prize);
       setWonCoupon(result.coupon);
+      setLastSpinAt(result.last_spin_at);
+      setCooldownError(null);
       setCoupons((currentCoupons) => [result.coupon, ...currentCoupons]);
       setCouponsOwnerId(userId);
 
@@ -190,7 +236,25 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
     } catch (error) {
       console.error('Error al girar la ruleta en el servidor:', error);
       setIsSpinning(false);
-      setSpinError('No se pudo girar la ruleta. Comprueba que la función de Supabase esté desplegada y vuelve a intentarlo.');
+      setSpinError(error instanceof Error ? error.message : 'No se pudo girar la ruleta. Inténtalo de nuevo.');
+      try {
+        setLastSpinAt(await gachaService.getLastSpinAt(audienceFilter));
+      } catch (refreshError) {
+        console.error('No se pudo actualizar el tiempo de espera después de un giro fallido:', refreshError);
+      }
+    }
+  }
+
+  async function refreshCooldown() {
+    setCooldownLoading(true);
+    setCooldownError(null);
+    try {
+      setLastSpinAt(await gachaService.getLastSpinAt(audienceFilter));
+    } catch (error) {
+      console.error('Error al volver a comprobar el tiempo de espera de la ruleta:', error);
+      setCooldownError('No se pudo comprobar el tiempo de espera. Inténtalo de nuevo.');
+    } finally {
+      setCooldownLoading(false);
     }
   }
 
@@ -251,7 +315,13 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
     );
   }
 
-  const canSpin = !prizesLoading && filteredPrizes.length >= 2 && filteredPrizes.length <= MAX_PRIZES && !prizesError;
+  const canSpin = !prizesLoading
+    && !cooldownLoading
+    && !cooldownError
+    && !cooldownActive
+    && filteredPrizes.length >= 2
+    && filteredPrizes.length <= MAX_PRIZES
+    && !prizesError;
 
   return (
     <section aria-labelledby="gacha-title" className="space-y-7">
@@ -355,8 +425,22 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
                     className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl border border-pink-200/20 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 px-6 py-3.5 text-sm font-extrabold text-white shadow-[0_8px_28px_rgba(217,70,239,0.28)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-wait disabled:opacity-55"
                   >
                     <RotateCw className={`h-4 w-4 ${isSpinning ? 'animate-spin' : ''}`} />
-                    {isSpinning ? 'Girando...' : 'Girar Ruleta'}
+                    {isSpinning ? 'Girando...' : cooldownLoading ? 'Comprobando...' : 'Girar Ruleta'}
                   </button>
+                  {cooldownActive && (
+                    <p role="status" className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-300/15 bg-amber-400/5 px-4 py-2 text-xs font-semibold text-amber-200">
+                      <RotateCw className="h-3.5 w-3.5" />
+                      Ruleta de {audienceFilter === 'relationship' ? 'pareja' : 'grupo'} disponible en: {cooldownHours}h {String(cooldownMinutes).padStart(2, '0')}m {String(cooldownSeconds).padStart(2, '0')}s
+                    </p>
+                  )}
+                  {cooldownError && (
+                    <div className="mt-3 max-w-sm text-center">
+                      <p role="alert" className="text-xs text-red-300">{cooldownError}</p>
+                      <button type="button" onClick={() => void refreshCooldown()} disabled={cooldownLoading} className="mt-2 rounded-lg border border-red-300/20 px-3 py-1.5 text-[10px] font-semibold text-red-200 hover:bg-red-400/10 disabled:opacity-50">
+                        Volver a comprobar
+                      </button>
+                    </div>
+                  )}
                   <p className="mt-3 text-center text-xs text-slate-400">El premio se selecciona y se guarda de forma segura en el servidor.</p>
                   {spinError && <p role="alert" className="mt-3 max-w-sm text-center text-xs text-red-300">{spinError}</p>}
                 </div>

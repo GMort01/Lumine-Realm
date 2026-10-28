@@ -43,6 +43,7 @@ Está construida con React y TypeScript. Supabase proporciona autenticación, ba
 - En Minijuegos, los autores pueden editar, activar, desactivar o eliminar sus premios.
 - Los filtros **Grupo** y **Pareja** separan la audiencia visible en Inventario, Minijuegos y recuerdos; los aportes individuales accesibles aparecen en Grupo.
 - La gestión de premios está plegada en un menú, y cada ruleta admite como máximo ocho premios activos.
+- Cada usuario tiene un giro cada 24 horas en la ruleta de Grupo y otro independiente en la de Pareja; el servidor valida ambos turnos. Game Master puede probar las ruletas sin esperar.
 - Los cupones de Grupo permiten solicitar el canje para un miembro o para todos; los de Pareja solo se canjean con la pareja vinculada.
 - La colección de cupones se filtra también por Grupo o Pareja, y la solicitud se puede iniciar desde Minijuegos o Perfil.
 
@@ -152,6 +153,8 @@ En Supabase **SQL Editor**, ejecuta los archivos de `supabase/migrations` en ord
 10. `20261028016000_coupon_targets_map_visibility_and_wheel_limits.sql`
 11. `20261028017000_profile_bios_banners_and_badges.sql`
 12. `20261028018000_profile_fields_read_permissions.sql`
+13. `20261028019000_daily_gacha_spin_limit.sql`
+14. `20261028020000_separate_gacha_spin_cooldowns.sql`
 
 La migración `090` crea el helper `is_realm_member_or_admin()` utilizado por políticas posteriores. La migración `110` añade las funciones de gestión de usuarios e invitaciones. La migración `120` prepara el correo sincronizado en los perfiles y los permisos RLS para que el panel Admin pueda consultar perfiles y añadir/quitar miembros directamente. Respeta el orden. Si estas migraciones ya se ejecutaron en el proyecto, no hace falta volver a aplicarlas.
 
@@ -166,6 +169,10 @@ La migración `160` añade la audiencia y el destinatario de los cupones, la RPC
 La migración `170` agrega `bio`, `banner_url`, `custom_status` y `badge` a `profiles`. Los miembros pueden modificar su biografía, banner y estado en su propio perfil; el rol visible de Game Master o Pareja se deriva de la cuenta y del vínculo aceptado, no de un valor que el usuario pueda asignarse a sí mismo. Si ya aplicaste la `160`, ejecuta solo la `170` antes de desplegar esta versión.
 
 La migración `180` concede lectura autenticada de los nuevos campos del perfil. Es necesaria si la `170` ya se aplicó sin estos permisos; ejecútala después de la `170` para evitar errores HTTP 403 al abrir Comunidad y Perfil.
+
+La migración `190` agrega `last_spin_at` y actualiza la RPC de la ruleta para imponer una espera de 24 horas por usuario. El Game Master puede saltarse la espera. La RPC guarda la marca de tiempo junto con el premio de forma atómica; aplica la migración antes de desplegar esta versión.
+
+La migración `200` divide ese tiempo de espera en `last_group_spin_at` y `last_relationship_spin_at`, manteniendo por separado el último giro de cada modalidad. Copia la marca anterior a ambos campos para que los giros previos sigan respetando su espera; tras esa transición, los giros de Grupo y Pareja son independientes. Aplícala después de la `190`.
 
 ### 4. Configura la cuenta administradora
 
