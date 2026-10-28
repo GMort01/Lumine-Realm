@@ -1,0 +1,90 @@
+.realm-map-container {
+  height: clamp(340px, 52vw, 520px);
+  background-color: #0b0f19;
+}
+
+.realm-leaflet-map {
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+  background-color: #0b0f19;
+}
+
+.realm-leaflet-map .map-dark-filter {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+  backface-visibility: hidden;
+}
+
+.realm-leaflet-map .leaflet-control-attribution,
+.realm-leaflet-map .leaflet-control-zoom a {
+  border: 1px solid rgb(38 51 82 / 80%) !important;
+  background: rgb(21 28 46 / 94%) !important;
+  color: #cbd5e1 !important;
+}
+
+.realm-leaflet-map .leaflet-control-attribution a {
+  color: #f9a8d4 !important;
+}
+
+.realm-leaflet-map .leaflet-control-zoom a {
+  color: #f1f5f9 !important;
+}
+
+.realm-map-tooltip {
+  border: 1px solid rgb(168 85 247 / 35%);
+  border-radius: 999px;
+  background: rgb(11 15 25 / 94%);
+  box-shadow: 0 0 18px rgb(168 85 247 / 18%);
+  color: #f1f5f9;
+  font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+}
+
+.realm-map-tooltip::before {
+  border-top-color: rgb(11 15 25 / 94%);
+}
+
+.realm-player-marker-guest {
+  animation: realm-marker-pulse-pink 2.4s ease-out infinite;
+}
+
+.realm-player-marker-current {
+  animation: realm-marker-pulse-purple 2.4s ease-out infinite;
+}
+
+.realm-connection-route {
+  stroke-dasharray: 2 12;
+  animation: realm-route-flow 1.4s linear infinite;
+  filter: drop-shadow(0 0 6px rgb(244 114 182 / 60%));
+}
+
+@keyframes realm-marker-pulse-pink {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgb(244 114 182 / 45%));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgb(244 114 182 / 75%));
+  }
+}
+
+@keyframes realm-marker-pulse-purple {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgb(168 85 247 / 45%));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgb(168 85 247 / 75%));
+  }
+}
+
+@keyframes realm-route-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realm-player-marker-guest,
+  .realm-player-marker-current,
+  .realm-connection-route {
+    animation: none;
+  }
+}
