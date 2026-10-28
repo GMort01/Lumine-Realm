@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { Award, CalendarDays, Check, Crown, Gift, Heart, LoaderCircle, LogIn, LogOut, MapPin, Pencil, Save, Ticket, User, UserPlus, X } from 'lucide-react';
+import { Award, BadgeCheck, CalendarDays, Check, Crown, Gift, Heart, LoaderCircle, LogIn, LogOut, MapPin, Pencil, Save, Ticket, User, UserPlus, X } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { couponsService } from '../../services/couponsService';
 import type { Coupon } from '../../services/couponsService';
@@ -60,6 +60,10 @@ export default function UserProfile({
   const [editUsername, setEditUsername] = useState('');
   const [editCountry, setEditCountry] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editBannerUrl, setEditBannerUrl] = useState('');
+  const [editBannerFile, setEditBannerFile] = useState<File | null>(null);
+  const [editCustomStatus, setEditCustomStatus] = useState('');
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -140,6 +144,9 @@ export default function UserProfile({
           setEditUsername(result?.username ?? (typeof user.user_metadata.nickname === 'string' ? user.user_metadata.nickname : ''));
           setEditCountry(result?.country ?? (typeof user.user_metadata.country === 'string' ? user.user_metadata.country : ''));
           setEditAvatarUrl(result?.avatar_url ?? (typeof user.user_metadata.avatar_url === 'string' ? user.user_metadata.avatar_url : ''));
+          setEditBio(result?.bio ?? '');
+          setEditBannerUrl(result?.banner_url ?? '');
+          setEditCustomStatus(result?.custom_status ?? '');
         }
       })
       .catch((error: unknown) => {
@@ -269,9 +276,15 @@ export default function UserProfile({
         avatar_url: editAvatarFile
           ? await profilesService.uploadAvatar(user.id, editAvatarFile)
           : editAvatarUrl,
+        bio: editBio,
+        banner_url: editBannerFile
+          ? await profilesService.uploadBanner(user.id, editBannerFile)
+          : editBannerUrl,
+        custom_status: editCustomStatus,
       });
       setProfile(updatedProfile);
       setEditAvatarFile(null);
+      setEditBannerFile(null);
       setIsEditingProfile(false);
       setProfileMessage('Perfil actualizado correctamente.');
     } catch (error) {
@@ -426,12 +439,16 @@ export default function UserProfile({
       ? (profile?.country?.trim() || user.user_metadata.country as string)
       : 'Ubicación no configurada';
   const rank = isAdmin ? 'Admin / Creador del Realm' : 'Miembro del Realm';
+  const profileBadge = isAdmin ? 'Game Master' : profile?.badge || 'Player';
   const profileAvatar = profile?.avatar_url || (typeof user.user_metadata.avatar_url === 'string' ? user.user_metadata.avatar_url : '');
 
   return (
     <section aria-labelledby="profile-title" className="mx-auto w-full max-w-5xl space-y-6">
       <article className="relative overflow-hidden rounded-3xl border border-realm-border/80 bg-card shadow-2xl shadow-black/25">
-        <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-r from-violet-900/80 via-fuchsia-900/55 to-amber-800/50" />
+        <div
+          className="absolute inset-x-0 top-0 h-44 bg-gradient-to-r from-violet-900/80 via-fuchsia-900/55 to-amber-800/50 bg-cover bg-center"
+          style={profile?.banner_url ? { backgroundImage: `linear-gradient(90deg,rgba(76,29,149,.72),rgba(112,26,117,.5),rgba(120,53,15,.5)),url("${profile.banner_url}")` } : undefined}
+        />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.2),transparent_45%)]" />
         <div className="relative flex flex-col items-center gap-5 px-6 pb-7 pt-10 text-center sm:flex-row sm:items-end sm:px-9 sm:text-left">
           <div className="relative shrink-0">
@@ -453,7 +470,14 @@ export default function UserProfile({
             <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-white/85 sm:justify-start">
               <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{location}</span>
               <span className="inline-flex items-center gap-1.5"><Award className="h-3.5 w-3.5 text-amber-200" />{rank}</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-slate-950/40 px-2.5 py-1 text-[10px] font-bold text-white/90"><BadgeCheck className="h-3 w-3 text-violet-200" />{profileBadge}</span>
             </div>
+            {(profile?.custom_status || profile?.bio) && (
+              <div className="mt-3 max-w-xl rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left backdrop-blur-sm">
+                {profile.custom_status && <p className="text-xs font-semibold text-emerald-200">{profile.custom_status}</p>}
+                {profile.bio && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-white/75">{profile.bio}</p>}
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 flex-wrap justify-center gap-2">
             <button
@@ -462,6 +486,10 @@ export default function UserProfile({
                 setEditUsername(profile?.username ?? (typeof user.user_metadata.nickname === 'string' ? user.user_metadata.nickname : ''));
                 setEditCountry(profile?.country ?? (typeof user.user_metadata.country === 'string' ? user.user_metadata.country : ''));
                 setEditAvatarUrl(profile?.avatar_url ?? (typeof user.user_metadata.avatar_url === 'string' ? user.user_metadata.avatar_url : ''));
+                setEditBio(profile?.bio ?? '');
+                setEditBannerUrl(profile?.banner_url ?? '');
+                setEditBannerFile(null);
+                setEditCustomStatus(profile?.custom_status ?? '');
                 setProfileError(null);
                 setProfileMessage(null);
                 setIsEditingProfile(true);
@@ -674,6 +702,50 @@ export default function UserProfile({
                   value={editCountry}
                   onChange={(event) => setEditCountry(event.target.value)}
                   placeholder="Ej. Perú 🇵🇪, Colombia 🇨🇴"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400"
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-profile-banner" className="mb-1.5 block text-xs font-medium text-slate-300">Banner del perfil <span className="text-slate-500">(URL de imagen opcional)</span></label>
+                <input
+                  id="edit-profile-banner"
+                  type="url"
+                  maxLength={2048}
+                  value={editBannerUrl}
+                  onChange={(event) => setEditBannerUrl(event.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400"
+                />
+                <input
+                  aria-label="Subir imagen para banner"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  onChange={(event) => setEditBannerFile(event.target.files?.[0] ?? null)}
+                  className="mt-2 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-violet-200"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">{editBannerFile ? `${editBannerFile.name} · se usará la imagen subida` : 'También puedes subir una imagen JPG, PNG, WebP, GIF o AVIF · máximo 5 MB.'}</p>
+              </div>
+              <div>
+                <label htmlFor="edit-profile-bio" className="mb-1.5 block text-xs font-medium text-slate-300">Sobre mí</label>
+                <textarea
+                  id="edit-profile-bio"
+                  maxLength={300}
+                  rows={3}
+                  value={editBio}
+                  onChange={(event) => setEditBio(event.target.value)}
+                  placeholder="Cuéntale algo a la comunidad..."
+                  className="w-full resize-y rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400"
+                />
+                <p className="mt-1 text-right text-[10px] text-slate-500">{editBio.length}/300</p>
+              </div>
+              <div>
+                <label htmlFor="edit-profile-status" className="mb-1.5 block text-xs font-medium text-slate-300">Estado personalizado</label>
+                <input
+                  id="edit-profile-status"
+                  maxLength={100}
+                  value={editCustomStatus}
+                  onChange={(event) => setEditCustomStatus(event.target.value)}
+                  placeholder="¿Qué tienes en mente?"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400"
                 />
               </div>

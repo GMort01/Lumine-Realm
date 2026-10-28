@@ -8,6 +8,10 @@ export interface RealmMember {
   username: string;
   country: string;
   avatar_url: string | null;
+  bio: string | null;
+  banner_url: string | null;
+  custom_status: string | null;
+  badge: string | null;
 }
 
 export interface RealmRelationship {
@@ -99,7 +103,7 @@ export const realmMembersService = {
 
     const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
-      .select('id, username, country, avatar_url')
+      .select('id, username, country, avatar_url, bio, banner_url, custom_status, badge')
       .in('id', members.map((member) => member.user_id));
 
     if (profilesError) throw profilesError;
@@ -113,6 +117,10 @@ export const realmMembersService = {
         username: profile?.username?.trim() || 'Jugador',
         country: profile?.country?.trim() || '',
         avatar_url: profile?.avatar_url ?? null,
+        bio: profile?.bio ?? null,
+        banner_url: profile?.banner_url ?? null,
+        custom_status: profile?.custom_status ?? null,
+        badge: profile?.badge ?? null,
       };
     });
   },

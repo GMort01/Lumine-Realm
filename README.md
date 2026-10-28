@@ -61,6 +61,8 @@ Está construida con React y TypeScript. Supabase proporciona autenticación, ba
 - Selector persistente de modo claro u oscuro, disponible desde la barra superior.
 - Gestión de miembros mediante invitaciones por correo.
 - Directorio privado del Realm con país, avatar, antigüedad, perfiles emergentes, control individual de visibilidad en el mapa e invitaciones mutuas para formar o terminar un vínculo de pareja.
+- Perfiles de Comunidad tipo tarjeta social, con banner, biografía, estado e insignias.
+- Edición del banner (subida de imagen o URL), biografía y estado personalizado desde Perfil.
 - El administrador conserva herramientas de moderación e invitaciones; los miembros pueden crear contenido compartido.
 - Las invitaciones quedan guardadas en la base de datos; la aplicación no envía correos automáticamente. El administrador comparte el enlace de la aplicación con la persona invitada.
 
@@ -148,6 +150,8 @@ En Supabase **SQL Editor**, ejecuta los archivos de `supabase/migrations` en ord
 8. `20261028014000_content_management_and_audience_filters.sql`
 9. `20261028015000_gift_management_permissions.sql`
 10. `20261028016000_coupon_targets_map_visibility_and_wheel_limits.sql`
+11. `20261028017000_profile_bios_banners_and_badges.sql`
+12. `20261028018000_profile_fields_read_permissions.sql`
 
 La migración `090` crea el helper `is_realm_member_or_admin()` utilizado por políticas posteriores. La migración `110` añade las funciones de gestión de usuarios e invitaciones. La migración `120` prepara el correo sincronizado en los perfiles y los permisos RLS para que el panel Admin pueda consultar perfiles y añadir/quitar miembros directamente. Respeta el orden. Si estas migraciones ya se ejecutaron en el proyecto, no hace falta volver a aplicarlas.
 
@@ -158,6 +162,10 @@ La migración `140` habilita edición y eliminación por autor, filtros de audie
 La migración `150` concede a los usuarios autenticados los permisos SQL de actualización y eliminación de regalos. RLS sigue limitando estas operaciones al autor del regalo o al Game Master. Si ya aplicaste la `140`, ejecuta solo la `150`.
 
 La migración `160` añade la audiencia y el destinatario de los cupones, la RPC protegida para solicitar canjes, un límite en base de datos de ocho premios activos por ruleta y las preferencias personales para ocultar miembros del mapa. También reemplaza la RPC de giro para separar Grupo y Pareja e incluye los premios individuales accesibles en Grupo. Si ya aplicaste la `150`, ejecuta solo la `160` antes de desplegar esta versión. No vuelvas a ejecutar una migración que ya se aplicó.
+
+La migración `170` agrega `bio`, `banner_url`, `custom_status` y `badge` a `profiles`. Los miembros pueden modificar su biografía, banner y estado en su propio perfil; el rol visible de Game Master o Pareja se deriva de la cuenta y del vínculo aceptado, no de un valor que el usuario pueda asignarse a sí mismo. Si ya aplicaste la `160`, ejecuta solo la `170` antes de desplegar esta versión.
+
+La migración `180` concede lectura autenticada de los nuevos campos del perfil. Es necesaria si la `170` ya se aplicó sin estos permisos; ejecútala después de la `170` para evitar errores HTTP 403 al abrir Comunidad y Perfil.
 
 ### 4. Configura la cuenta administradora
 

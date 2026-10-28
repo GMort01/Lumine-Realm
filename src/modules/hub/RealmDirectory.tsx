@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { Check, Crown, Eye, EyeOff, Heart, LoaderCircle, MapPin, UserPlus, X } from 'lucide-react';
+import { Activity, BadgeCheck, CalendarDays, Check, Crown, Eye, EyeOff, Heart, LoaderCircle, MapPin, UserPlus, X } from 'lucide-react';
 import { supabase } from '../../config/supabase';
+import { ADMIN_EMAIL } from '../../config/roles';
 import { realmMembersService } from '../../services/realmMembersService';
 import type { RealmMember, RealmRelationship } from '../../services/realmMembersService';
 
@@ -71,6 +72,9 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'realm_relationships' }, () => {
         void loadDirectory();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        void loadDirectory();
+      })
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -91,6 +95,12 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
   const incomingInvitations = relationships.filter(
     (relationship) => relationship.status === 'pending' && relationship.partner_id === user?.id,
   );
+  const selectedRelationship = selectedMember && user
+    ? relationships.find((item) =>
+      (item.initiator_id === user.id && item.partner_id === selectedMember.user_id)
+      || (item.partner_id === user.id && item.initiator_id === selectedMember.user_id),
+    )
+    : undefined;
 
   async function performAction(
     memberId: string,
@@ -179,25 +189,46 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
               || (item.partner_id === user.id && item.initiator_id === member.user_id),
             );
             return (
-              <article key={member.user_id} className={`rounded-2xl border bg-slate-900/75 p-5 shadow-lg ${relationship?.status === 'accepted' ? 'border-pink-300/35' : 'border-slate-800'}`}>
-                <div className="flex items-center gap-3">
-                  {member.avatar_url ? (
-                    <img src={member.avatar_url} alt="" className="h-12 w-12 rounded-full border border-violet-300/30 object-cover" />
-                  ) : (
-                    <div className="grid h-12 w-12 place-items-center rounded-full bg-violet-500/15 text-lg font-bold text-violet-200">{member.username.slice(0, 1).toUpperCase()}</div>
-                  )}
-                  <div className="min-w-0">
-                    <h2 className="truncate font-bold text-white">{member.username}</h2>
-                    <p className="flex items-center gap-1 text-xs text-slate-400"><MapPin className="h-3 w-3" />{member.country || 'Ubicación no indicada'}</p>
+              <article key={member.user_id} className={`overflow-hidden rounded-2xl border bg-slate-900/90 shadow-xl shadow-black/20 ${relationship?.status === 'accepted' ? 'border-pink-300/40' : 'border-slate-800'}`}>
+                <div
+                  className="h-24 bg-gradient-to-br from-violet-800 via-fuchsia-800 to-slate-900 bg-cover bg-center"
+                  style={member.banner_url ? { backgroundImage: `linear-gradient(180deg,rgba(15,23,42,.06),rgba(15,23,42,.35)),url("${member.banner_url}")` } : undefined}
+                />
+                <div className="px-5 pb-5">
+                  <div className="-mt-10 mb-3 flex items-end justify-between gap-3">
+                    <div className="relative grid h-[76px] w-[76px] shrink-0 place-items-center overflow-hidden rounded-full border-[5px] border-slate-900 bg-slate-800 text-2xl font-bold text-violet-100 shadow-lg">
+                      {member.avatar_url
+                        ? <img src={member.avatar_url} alt={`Avatar de ${member.username}`} className="h-full w-full object-cover" />
+                        : member.username.slice(0, 1).toUpperCase()}
+                      <span className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-[3px] border-slate-900 bg-emerald-400" aria-label="Miembro del Realm" title="Miembro del Realm" />
+                    </div>
+                    <span className={`mb-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                      relationship?.status === 'accepted' || member.badge?.toLowerCase().includes('pareja')
+                        ? 'border-pink-300/30 bg-pink-400/10 text-pink-200'
+                        : member.user_id === user.id && user.email?.toLowerCase() === ADMIN_EMAIL
+                          ? 'border-amber-300/30 bg-amber-400/10 text-amber-200'
+                          : 'border-violet-300/20 bg-violet-400/10 text-violet-200'
+                    }`}>
+                      <BadgeCheck className="h-3 w-3" />
+                      {relationship?.status === 'accepted' || member.badge?.toLowerCase().includes('pareja')
+                        ? 'Pareja'
+                        : member.user_id === user.id && user.email?.toLowerCase() === ADMIN_EMAIL
+                          ? 'Game Master'
+                          : member.badge || 'Player'}
+                    </span>
                   </div>
-                </div>
-                <div className="mt-4 flex items-center justify-between gap-2 text-xs text-slate-400">
-                  <span>En el Realm desde {joinedDate(member.joined_at)}</span>
-                  <span className="shrink-0 rounded-full bg-slate-800 px-2 py-1 font-mono">{daysInRealm(member.joined_at)} días</span>
-                </div>
-                <button type="button" onClick={() => setSelectedMember(member)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-500/20">
+                  <h2 className="truncate text-lg font-extrabold text-white">{member.username}</h2>
+                  {member.custom_status && <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-200"><Activity className="h-3 w-3 shrink-0" />{member.custom_status}</p>}
+                  <p className="mt-3 line-clamp-2 min-h-9 text-xs leading-relaxed text-slate-300">{member.bio || 'Este aventurero aún no ha escrito una descripción.'}</p>
+                  <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400"><MapPin className="h-3 w-3" />{member.country || 'Ubicación no indicada'}</p>
+                  <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-800 pt-3 text-[10px] text-slate-500">
+                    <span>Miembro desde {joinedDate(member.joined_at)}</span>
+                    <span className="shrink-0 rounded-full bg-slate-800 px-2 py-1 font-mono">{daysInRealm(member.joined_at)} días</span>
+                  </div>
+                <button type="button" onClick={() => setSelectedMember(member)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 py-2.5 text-xs font-semibold text-violet-200 transition hover:border-violet-300/40 hover:bg-violet-500/20">
                   <UserPlus className="h-3.5 w-3.5" />Ver perfil
                 </button>
+                </div>
               </article>
             );
           })}
@@ -210,28 +241,59 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="community-profile-title"
-            className="w-full max-w-lg rounded-3xl border border-violet-300/20 bg-slate-950 p-6 shadow-2xl shadow-violet-950/50"
+            className="w-full max-w-lg overflow-hidden rounded-3xl border border-violet-300/20 bg-slate-950 shadow-2xl shadow-violet-950/50"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                {selectedMember.avatar_url
-                  ? <img src={selectedMember.avatar_url} alt="" className="h-14 w-14 rounded-full border border-violet-300/30 object-cover" />
-                  : <div className="grid h-14 w-14 place-items-center rounded-full bg-violet-500/15 text-xl font-bold text-violet-200">{selectedMember.username.slice(0, 1).toUpperCase()}</div>}
-                <div>
-                  <h2 id="community-profile-title" className="text-xl font-bold text-white">{selectedMember.username}</h2>
-                  <p className="flex items-center gap-1 text-xs text-slate-400"><MapPin className="h-3 w-3" />{selectedMember.country || 'Ubicación no indicada'}</p>
+            <div
+              className="relative h-32 bg-gradient-to-br from-violet-800 via-fuchsia-800 to-slate-900 bg-cover bg-center sm:h-40"
+              style={selectedMember.banner_url ? { backgroundImage: `linear-gradient(180deg,rgba(15,23,42,.04),rgba(15,23,42,.5)),url("${selectedMember.banner_url}")` } : undefined}
+            >
+              <button type="button" aria-label="Cerrar perfil" onClick={() => setSelectedMember(null)} className="absolute right-4 top-4 rounded-lg border border-white/15 bg-slate-950/60 p-2 text-white backdrop-blur hover:bg-slate-900"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="px-5 pb-6 sm:px-7">
+              <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
+                <div className="grid h-24 w-24 place-items-center overflow-hidden rounded-full border-[6px] border-slate-950 bg-slate-800 text-3xl font-bold text-violet-100 shadow-xl">
+                  {selectedMember.avatar_url
+                    ? <img src={selectedMember.avatar_url} alt={`Avatar de ${selectedMember.username}`} className="h-full w-full object-cover" />
+                    : selectedMember.username.slice(0, 1).toUpperCase()}
                 </div>
+                <span className={`mb-1 inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[10px] font-bold ${
+                  selectedRelationship?.status === 'accepted' || selectedMember.badge?.toLowerCase().includes('pareja')
+                    ? 'border-pink-300/30 bg-pink-400/10 text-pink-200'
+                    : selectedMember.user_id === user.id && user.email?.toLowerCase() === ADMIN_EMAIL
+                      ? 'border-amber-300/30 bg-amber-400/10 text-amber-200'
+                      : 'border-violet-300/20 bg-violet-400/10 text-violet-200'
+                }`}>
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  {selectedRelationship?.status === 'accepted' || selectedMember.badge?.toLowerCase().includes('pareja')
+                    ? 'Pareja'
+                    : selectedMember.user_id === user.id && user.email?.toLowerCase() === ADMIN_EMAIL
+                      ? 'Game Master'
+                      : selectedMember.badge || 'Player'}
+                </span>
               </div>
-              <button type="button" aria-label="Cerrar perfil" onClick={() => setSelectedMember(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-300">
-              <span>En el Realm desde {joinedDate(selectedMember.joined_at)}</span>
-              <span className="rounded-full bg-slate-800 px-2 py-1 font-mono">{daysInRealm(selectedMember.joined_at)} días</span>
-            </div>
+              <div className="mt-4 border-b border-slate-800 pb-5">
+                <h2 id="community-profile-title" className="text-2xl font-extrabold text-white">{selectedMember.username}</h2>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400"><MapPin className="h-3.5 w-3.5" />{selectedMember.country || 'Ubicación no indicada'}</p>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <article className="rounded-xl border border-violet-300/10 bg-slate-900/80 p-4 sm:col-span-2">
+                  <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300">Sobre mí</h3>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-200">{selectedMember.bio || 'Este aventurero aún no ha escrito una descripción.'}</p>
+                </article>
+                <article className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+                  <h3 className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300"><CalendarDays className="h-3.5 w-3.5" />Miembro desde</h3>
+                  <p className="text-sm font-semibold text-slate-100">{joinedDate(selectedMember.joined_at)}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">{daysInRealm(selectedMember.joined_at)} días en el Realm</p>
+                </article>
+                <article className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+                  <h3 className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300"><Activity className="h-3.5 w-3.5" />Estado</h3>
+                  <p className="text-sm text-slate-200">{selectedMember.custom_status || 'Sin estado personalizado'}</p>
+                </article>
+              </div>
 
             {selectedMember.user_id !== user.id && (
-              <div className="space-y-3">
+              <div className="mt-5 space-y-3">
                 <button
                   type="button"
                   disabled={savingId !== null}
@@ -240,17 +302,14 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
                     () => realmMembersService.setMapMemberVisibility(selectedMember.user_id, hiddenMemberIds.has(selectedMember.user_id)),
                     hiddenMemberIds.has(selectedMember.user_id) ? `${selectedMember.username} volverá a aparecer en tu mapa.` : `${selectedMember.username} ya no aparecerá en tu mapa.`,
                   )}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 py-3 text-sm font-semibold text-violet-100 hover:bg-violet-500/20 disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 py-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:opacity-50"
                 >
                   {hiddenMemberIds.has(selectedMember.user_id) ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   {hiddenMemberIds.has(selectedMember.user_id) ? 'Mostrar en mi mapa' : 'Ocultar de mi mapa'}
                 </button>
 
                 {(() => {
-                  const relationship = relationships.find((item) =>
-                    (item.initiator_id === user.id && item.partner_id === selectedMember.user_id)
-                    || (item.partner_id === user.id && item.initiator_id === selectedMember.user_id),
-                  );
+                  const relationship = selectedRelationship;
                   if (relationship?.status === 'accepted') {
                     return <button type="button" disabled={savingId !== null} onClick={() => void performAction(relationship.id, () => realmMembersService.endRelationship(relationship.id), 'El vínculo de pareja terminó.')} className="w-full rounded-xl border border-pink-300/20 bg-pink-400/10 px-4 py-3 text-sm font-semibold text-pink-200 hover:bg-pink-400/20 disabled:opacity-50">{savingId === relationship.id ? 'Actualizando...' : 'Terminar vínculo de pareja'}</button>;
                   }
@@ -260,11 +319,12 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
                   if (ownRelationship) {
                     return <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-center text-xs text-slate-400">Solo puedes tener un vínculo activo a la vez.</p>;
                   }
-                  return <button type="button" disabled={savingId !== null} onClick={() => void performAction(selectedMember.user_id, () => realmMembersService.invitePartner(selectedMember.user_id), 'Invitación de pareja enviada.')} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-pink-300/20 bg-pink-400/10 px-4 py-3 text-sm font-semibold text-pink-100 hover:bg-pink-400/20 disabled:opacity-50">{savingId === selectedMember.user_id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className="h-4 w-4" />}Invitar como pareja</button>;
+                  return <button type="button" disabled={savingId !== null} onClick={() => void performAction(selectedMember.user_id, () => realmMembersService.invitePartner(selectedMember.user_id), 'Invitación de pareja enviada.')} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-pink-300/20 bg-pink-400/10 px-4 py-3 text-sm font-semibold text-pink-100 transition hover:bg-pink-400/20 disabled:opacity-50">{savingId === selectedMember.user_id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className="h-4 w-4" />}Vincular de a dos</button>;
                 })()}
               </div>
             )}
             {selectedMember.user_id === user.id && <p className="rounded-xl border border-amber-300/15 bg-amber-400/5 p-3 text-center text-sm text-amber-100"><Crown className="mr-2 inline h-4 w-4" />Este es tu perfil.</p>}
+            </div>
           </section>
         </div>
       )}

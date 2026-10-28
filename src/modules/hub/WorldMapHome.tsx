@@ -199,6 +199,7 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
   const [isLoading, setIsLoading] = useState(Boolean(user));
   const [isAccepting, setIsAccepting] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [realmLoadError, setRealmLoadError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const loadRealmData = useCallback(async () => {
@@ -206,6 +207,7 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
       setMembers([]);
       setHiddenMemberIds(new Set());
       setInvitations([]);
+      setRealmLoadError(null);
       setIsLoading(false);
       return;
     }
@@ -221,9 +223,12 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
       setInvitations(nextInvitations);
       setHiddenMemberIds(hiddenIds);
       setStatusError(null);
+      setRealmLoadError(null);
     } catch (error) {
       console.error('Error al cargar miembros del Realm:', error);
-      setStatusError('No se pudo cargar el Realm. Comprueba que la migración de miembros esté aplicada.');
+      const message = 'No se pudieron cargar los miembros del Realm. Revisa los permisos de lectura en Supabase y vuelve a intentarlo.';
+      setStatusError(message);
+      setRealmLoadError(message);
     } finally {
       setIsLoading(false);
     }
@@ -515,6 +520,13 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
               </motion.article>
             );
           })}
+        </div>
+      ) : realmLoadError ? (
+        <div role="alert" className="rounded-2xl border border-red-400/20 bg-red-400/5 px-6 py-8 text-center">
+          <p className="text-sm text-red-200">{realmLoadError}</p>
+          <button type="button" onClick={() => void loadRealmData()} className="mt-4 rounded-lg border border-red-300/20 px-4 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-400/10">
+            Reintentar
+          </button>
         </div>
       ) : !isLoading && user ? (
         <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
