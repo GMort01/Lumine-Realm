@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import { motion } from 'framer-motion';
-import { Clock, Compass, Heart, LoaderCircle, MapPin, Sparkles, UserPlus } from 'lucide-react';
+import { ArrowLeftRight, Clock, Compass, Heart, LoaderCircle, MapPin, Sparkles, UserPlus } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import './worldMapHome.css';
 import { ADMIN_EMAIL } from '../../config/roles';
@@ -174,6 +174,23 @@ function resolveMember(member: RealmMember, user: SupabaseUser | null): Resolved
   };
 }
 
+function distanceBetweenKm(start: [number, number], end: [number, number]) {
+  const earthRadiusKm = 6371;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const latitudeDifference = toRadians(end[0] - start[0]);
+  const longitudeDifference = toRadians(end[1] - start[1]);
+  const startLatitude = toRadians(start[0]);
+  const endLatitude = toRadians(end[0]);
+  const haversine = Math.sin(latitudeDifference / 2) ** 2
+    + Math.cos(startLatitude) * Math.cos(endLatitude) * Math.sin(longitudeDifference / 2) ** 2;
+
+  return Math.round(earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)));
+}
+
+function formatDistance(distanceKm: number) {
+  return new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(distanceKm);
+}
+
 export default function WorldMapHome({ user }: WorldMapHomeProps) {
   const [now, setNow] = useState(() => new Date());
   const [members, setMembers] = useState<RealmMember[]>([]);
@@ -233,12 +250,37 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
     [resolvedMembers],
   );
   const currentMember = mappedMembers.find(({ member }) => member.user_id === user?.id);
+  const memberDistances = useMemo(() => {
+    const distances: Array<{
+      key: string;
+      first: (typeof mappedMembers)[number];
+      second: (typeof mappedMembers)[number];
+      distanceKm: number;
+    }> = [];
+
+    for (let firstIndex = 0; firstIndex < mappedMembers.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < mappedMembers.length; secondIndex += 1) {
+        const first = mappedMembers[firstIndex];
+        const second = mappedMembers[secondIndex];
+        distances.push({
+          key: `${first.member.user_id}-${second.member.user_id}`,
+          first,
+          second,
+          distanceKm: distanceBetweenKm(first.location.coordinates, second.location.coordinates),
+        });
+      }
+    }
+
+    return distances;
+  }, [mappedMembers]);
   const connectionRoutes = currentMember
     ? mappedMembers
       .filter(({ member }) => member.user_id !== currentMember.member.user_id)
       .map(({ member, location }) => ({
         key: member.user_id,
         positions: createConnectionCurve(currentMember.location.coordinates, location.coordinates),
+        distanceKm: distanceBetweenKm(currentMember.location.coordinates, location.coordinates),
+        memberName: member.displayName,
       }))
     : [];
   const membersNotMapped = resolvedMembers.length - mappedMembers.length;
@@ -336,7 +378,11 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
                 opacity: 0.75,
                 className: 'realm-connection-route',
               }}
-            />
+            >
+              <Tooltip sticky className="realm-map-tooltip">
+                {formatDistance(route.distanceKm)} km hasta {route.memberName}
+              </Tooltip>
+            </Polyline>
           ))}
 
           {mappedMembers.map(({ member, location }) => {
@@ -370,6 +416,34 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
           </div>
         </div>
       </div>
+
+      {memberDistances.length > 0 && (
+        <section aria-labelledby="member-distances-title" className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ArrowLeftRight className="h-4 w-4 text-pink-300" />
+            <h3 id="member-distances-title" className="text-sm font-bold uppercase tracking-wider text-slate-200">Distancia entre miembros</h3>
+            <span className="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">{memberDistances.length}</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {memberDistances.map(({ key, first, second, distanceKm }) => (
+              <article key={key} className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-violet-300/15 bg-slate-950/70 px-4 py-3 shadow-lg shadow-violet-950/10">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-slate-100">
+                    {first.location.flag} {first.member.displayName}
+                    <span className="mx-1.5 text-slate-600">↔</span>
+                    {second.location.flag} {second.member.displayName}
+                  </p>
+                  <p className="mt-1 truncate text-[10px] text-slate-500">{first.location.label} · {second.location.label}</p>
+                </div>
+                <p className="shrink-0 rounded-xl border border-pink-300/15 bg-pink-400/5 px-2.5 py-1.5 font-mono text-xs font-bold text-pink-200">
+                  ≈ {formatDistance(distanceKm)} km
+                </p>
+              </article>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-500">Distancias aproximadas calculadas entre ubicaciones representativas de cada país.</p>
+        </section>
+      )}
 
       {membersNotMapped > 0 && (
         <p className="text-center text-xs text-amber-200/80">
