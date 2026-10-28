@@ -28,6 +28,7 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
   const [relationships, setRelationships] = useState<RealmRelationship[]>([]);
   const [hiddenMemberIds, setHiddenMemberIds] = useState<Set<string>>(() => new Set());
   const [selectedMember, setSelectedMember] = useState<RealmMember | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -80,6 +81,15 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
       void supabase.removeChannel(channel);
     };
   }, [loadDirectory, user]);
+
+  useEffect(() => {
+    if (!previewImage) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setPreviewImage(null);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewImage]);
 
   const activeRelationships = useMemo(
     () => relationships.filter((relationship) => relationship.status === 'accepted' || relationship.status === 'pending'),
@@ -244,18 +254,41 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
             className="w-full max-w-lg overflow-hidden rounded-3xl border border-violet-300/20 bg-slate-950 shadow-2xl shadow-violet-950/50"
             onClick={(event) => event.stopPropagation()}
           >
-            <div
-              className="relative h-32 bg-gradient-to-br from-violet-800 via-fuchsia-800 to-slate-900 bg-cover bg-center sm:h-40"
-              style={selectedMember.banner_url ? { backgroundImage: `linear-gradient(180deg,rgba(15,23,42,.04),rgba(15,23,42,.5)),url("${selectedMember.banner_url}")` } : undefined}
-            >
+            <div className="relative h-32 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-800 via-fuchsia-800 to-slate-900 sm:h-40">
+              {selectedMember.banner_url ? (
+                <button
+                  type="button"
+                  aria-label={`Ampliar banner de ${selectedMember.username}`}
+                  onClick={() => {
+                    if (selectedMember.banner_url) {
+                      setPreviewImage({ url: selectedMember.banner_url, title: `Banner de ${selectedMember.username}` });
+                    }
+                  }}
+                  className="absolute inset-0 h-full w-full cursor-zoom-in bg-cover bg-center transition-transform duration-300 hover:scale-[1.02]"
+                  style={{ backgroundImage: `linear-gradient(180deg,rgba(15,23,42,.04),rgba(15,23,42,.5)),url("${selectedMember.banner_url}")` }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(244,114,182,.3),transparent_55%)]" />
+              )}
               <button type="button" aria-label="Cerrar perfil" onClick={() => setSelectedMember(null)} className="absolute right-4 top-4 rounded-lg border border-white/15 bg-slate-950/60 p-2 text-white backdrop-blur hover:bg-slate-900"><X className="h-4 w-4" /></button>
             </div>
             <div className="px-5 pb-6 sm:px-7">
               <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
-                <div className="grid h-24 w-24 place-items-center overflow-hidden rounded-full border-[6px] border-slate-950 bg-slate-800 text-3xl font-bold text-violet-100 shadow-xl">
-                  {selectedMember.avatar_url
-                    ? <img src={selectedMember.avatar_url} alt={`Avatar de ${selectedMember.username}`} className="h-full w-full object-cover" />
-                    : selectedMember.username.slice(0, 1).toUpperCase()}
+                <div className="relative z-10 grid h-24 w-24 place-items-center overflow-hidden rounded-full border-[6px] border-slate-950 bg-slate-800 text-3xl font-bold text-violet-100 shadow-xl">
+                  {selectedMember.avatar_url ? (
+                    <button
+                      type="button"
+                      aria-label={`Ampliar foto de perfil de ${selectedMember.username}`}
+                      onClick={() => {
+                        if (selectedMember.avatar_url) {
+                          setPreviewImage({ url: selectedMember.avatar_url, title: `Foto de perfil de ${selectedMember.username}` });
+                        }
+                      }}
+                      className="h-full w-full cursor-zoom-in transition-transform duration-200 hover:scale-105"
+                    >
+                      <img src={selectedMember.avatar_url} alt={`Avatar de ${selectedMember.username}`} className="h-full w-full object-cover" />
+                    </button>
+                  ) : selectedMember.username.slice(0, 1).toUpperCase()}
                 </div>
                 <span className={`mb-1 inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[10px] font-bold ${
                   selectedRelationship?.status === 'accepted' || selectedMember.badge?.toLowerCase().includes('pareja')
@@ -325,6 +358,36 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
             )}
             {selectedMember.user_id === user.id && <p className="rounded-xl border border-amber-300/15 bg-amber-400/5 p-3 text-center text-sm text-amber-100"><Crown className="mr-2 inline h-4 w-4" />Este es tu perfil.</p>}
             </div>
+          </section>
+        </div>
+      )}
+
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label={previewImage.title}
+            className="relative flex max-h-[92vh] max-w-[94vw] flex-col items-center gap-3"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Cerrar vista previa"
+              onClick={() => setPreviewImage(null)}
+              className="absolute -right-2 -top-12 rounded-full border border-white/20 bg-slate-900/90 p-2 text-white shadow-lg transition hover:bg-slate-800 sm:right-0"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={previewImage.url}
+              alt={previewImage.title}
+              className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl shadow-black/50"
+            />
+            <p className="text-center text-xs font-medium text-white/80">{previewImage.title}</p>
           </section>
         </div>
       )}
