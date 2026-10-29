@@ -19,15 +19,15 @@ export const gachaService = {
     validateUuid(user.id, 'La cuenta');
     if (audienceFilter !== 'realm' && audienceFilter !== 'relationship') throw new Error('La audiencia de la ruleta no es válida.');
 
-    const column = audienceFilter === 'relationship' ? 'last_relationship_spin_at' : 'last_group_spin_at';
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(column)
-      .eq('id', user.id)
-      .single();
+    const { data, error } = await supabase.rpc('get_gacha_cooldown_for_current_user', {
+      p_audience_filter: audienceFilter,
+    });
 
     if (error) throw error;
-    return data[column];
+    if (data !== null && typeof data !== 'string') {
+      throw new Error('La respuesta del servidor al consultar el tiempo de espera no es válida.');
+    }
+    return data;
   },
 
   async spin(audienceFilter: ContentAudienceFilter = 'realm'): Promise<SpinGachaResult> {

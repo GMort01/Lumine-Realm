@@ -155,6 +155,7 @@ En Supabase **SQL Editor**, ejecuta los archivos de `supabase/migrations` en ord
 12. `20261028018000_profile_fields_read_permissions.sql`
 13. `20261028019000_daily_gacha_spin_limit.sql`
 14. `20261028020000_separate_gacha_spin_cooldowns.sql`
+15. `20261028021000_gacha_cooldown_rpc.sql`
 
 La migración `090` crea el helper `is_realm_member_or_admin()` utilizado por políticas posteriores. La migración `110` añade las funciones de gestión de usuarios e invitaciones. La migración `120` prepara el correo sincronizado en los perfiles y los permisos RLS para que el panel Admin pueda consultar perfiles y añadir/quitar miembros directamente. Respeta el orden. Si estas migraciones ya se ejecutaron en el proyecto, no hace falta volver a aplicarlas.
 
@@ -171,6 +172,8 @@ La migración `170` agrega `bio`, `banner_url`, `custom_status` y `badge` a `pro
 La migración `180` concede lectura autenticada de los nuevos campos del perfil. Es necesaria si la `170` ya se aplicó sin estos permisos; ejecútala después de la `170` para evitar errores HTTP 403 al abrir Comunidad y Perfil.
 
 La migración `190` agrega `last_spin_at` y actualiza la RPC de la ruleta para imponer una espera de 24 horas por usuario. El Game Master puede saltarse la espera. La RPC guarda la marca de tiempo junto con el premio de forma atómica; aplica la migración antes de desplegar esta versión.
+
+La migración `200` separa los cooldowns de Grupo y Pareja. La migración `210` permite consultar el cooldown propio mediante una RPC segura, evitando depender de permisos de lectura por columna en `profiles`; aplícala después de la `200` para corregir errores 403 al abrir la ruleta.
 
 La migración `200` divide ese tiempo de espera en `last_group_spin_at` y `last_relationship_spin_at`, manteniendo por separado el último giro de cada modalidad. Copia la marca anterior a ambos campos para que los giros previos sigan respetando su espera; tras esa transición, los giros de Grupo y Pareja son independientes. Aplícala después de la `190`.
 
