@@ -315,7 +315,7 @@ export default function WorldMapHome({ user }: WorldMapHomeProps) {
       setStatusMessage('¡Ya formas parte del Realm! El mapa se actualizará para todos.');
     } catch (error) {
       console.error('Error al aceptar invitación al Realm:', error);
-      setStatusError(error instanceof Error ? error.message : 'No se pudo aceptar la invitación.');
+      setStatusError('No se pudo aceptar la invitación.');
     } finally {
       setIsAccepting(null);
     }

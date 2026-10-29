@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { ADMIN_EMAIL } from '../config/roles';
+import { validateUuid } from '../utils/validation';
 
 export type CouponStatus = 'available' | 'requested' | 'redeemed';
 
@@ -37,6 +38,7 @@ async function getAuthenticatedUserId() {
 export const couponsService = {
   async getMyCoupons(audienceFilter?: CouponAudienceFilter): Promise<Coupon[]> {
     const userId = await getAuthenticatedUserId();
+    validateUuid(userId, 'La cuenta');
     const { data, error } = await supabase
       .from('coupons')
       .select('*')
@@ -56,6 +58,9 @@ export const couponsService = {
     forAll = false,
   ): Promise<Coupon> {
     await getAuthenticatedUserId();
+    validateUuid(couponId, 'El cupón');
+    if (targetUserId) validateUuid(targetUserId, 'El destinatario');
+    if (typeof forAll !== 'boolean') throw new Error('El destinatario del canje no es válido.');
     const { data, error } = await supabase.rpc('request_coupon_redemption', {
       p_coupon_id: couponId,
       p_target_user_id: targetUserId,
@@ -102,6 +107,7 @@ export const couponsService = {
     if (user?.email?.toLowerCase() !== ADMIN_EMAIL) {
       throw new Error('Solo el administrador puede aprobar el canje.');
     }
+    validateUuid(couponId, 'El cupón');
 
     const { data, error } = await supabase.rpc('admin_approve_coupon_redemption', {
       p_coupon_id: couponId,
@@ -119,6 +125,8 @@ export const couponsService = {
 
   async deleteMyCoupon(couponId: string): Promise<void> {
     const userId = await getAuthenticatedUserId();
+    validateUuid(userId, 'La cuenta');
+    validateUuid(couponId, 'El cupón');
     const { error } = await supabase
       .from('coupons')
       .delete()

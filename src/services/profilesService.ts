@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { sanitizePlainText, validateImageUrl, validateUuid } from '../utils/validation';
 
 const AVATARS_BUCKET = 'profile-avatars';
 
@@ -23,6 +24,7 @@ export interface EditablePlayerProfile {
 }
 
 async function uploadProfileImage(userId: string, file: File, imageName: string): Promise<string> {
+  validateUuid(userId, 'La cuenta');
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
   const extension = file.name.split('.').pop()?.toLowerCase();
   if (!allowedTypes.has(file.type) || !extension || !/^(jpe?g|png|webp|gif|avif)$/.test(extension)) {
@@ -55,6 +57,7 @@ export const profilesService = {
   },
 
   async getMyProfile(userId: string): Promise<PlayerProfile | null> {
+    validateUuid(userId, 'La cuenta');
     const { data, error } = await supabase
       .from('profiles')
       .select('id, username, country, avatar_url, bio, banner_url, custom_status, badge')
@@ -69,14 +72,15 @@ export const profilesService = {
   },
 
   async updateMyProfile(userId: string, updates: EditablePlayerProfile): Promise<PlayerProfile> {
+    validateUuid(userId, 'La cuenta');
     const profileUpdates: Record<string, string | null> = {
-      username: updates.username.trim(),
-      country: updates.country,
-      avatar_url: updates.avatar_url.trim() || null,
+      username: sanitizePlainText(updates.username, 'El nombre de usuario', 40),
+      country: sanitizePlainText(updates.country, 'La ubicación', 80),
+      avatar_url: validateImageUrl(updates.avatar_url, 'El avatar'),
     };
-    if (updates.bio !== undefined) profileUpdates.bio = updates.bio.trim() || null;
-    if (updates.banner_url !== undefined) profileUpdates.banner_url = updates.banner_url.trim() || null;
-    if (updates.custom_status !== undefined) profileUpdates.custom_status = updates.custom_status.trim() || null;
+    if (updates.bio !== undefined) profileUpdates.bio = sanitizePlainText(updates.bio, 'La biografía', 250) || null;
+    if (updates.banner_url !== undefined) profileUpdates.banner_url = validateImageUrl(updates.banner_url, 'El banner');
+    if (updates.custom_status !== undefined) profileUpdates.custom_status = sanitizePlainText(updates.custom_status, 'El estado personalizado', 100) || null;
 
     const { data, error } = await supabase
       .from('profiles')

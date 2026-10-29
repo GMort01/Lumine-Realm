@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AlertCircle, CalendarDays, CheckCircle2, FileImage, LoaderCircle, Plus } from 'lucide-react';
 import { timelineService } from '../../services/timelineService';
+import { safeUiError } from '../../utils/validation';
 import type { TimelineEvent } from '../../services/timelineService';
 
 function todayAsInputValue() {
@@ -61,16 +62,16 @@ export default function TimelineEventsAdmin() {
       await loadEvents();
     } catch (error) {
       console.error('Error al crear un hito:', error);
-      let message = error instanceof Error ? error.message : 'Error inesperado.';
+      let message = safeUiError(error, 'No se pudo guardar el hito.');
       if (uploadedPath) {
         try {
           await timelineService.removeImage(uploadedPath);
         } catch (cleanupError) {
           console.error('No se pudo limpiar la imagen del hito:', cleanupError);
-          message += ' La imagen quedó en Storage; revisa el bucket.';
+          message += ' No se pudo limpiar la imagen subida. Contacta al administrador.';
         }
       }
-      setErrorMessage(`No se pudo guardar el hito. ${message}`);
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -90,7 +91,7 @@ export default function TimelineEventsAdmin() {
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label htmlFor="timeline-title" className="mb-1.5 block text-xs font-medium text-slate-300">Título del recuerdo</label>
-            <input id="timeline-title" required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej. Nuestro primer viaje" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-violet-400" />
+            <input id="timeline-title" required maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej. Nuestro primer viaje" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-violet-400" />
           </div>
           <div>
             <label htmlFor="timeline-date" className="mb-1.5 block text-xs font-medium text-slate-300">Fecha del recuerdo</label>

@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import type { Coupon } from './couponsService';
 import type { CouponPrize } from './couponPrizesService';
 import type { ContentAudienceFilter } from '../components/ui/ContentAudienceFilter';
+import { validateUuid } from '../utils/validation';
 
 export interface SpinGachaResult {
   coupon: Coupon;
@@ -15,6 +16,8 @@ export const gachaService = {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!user) throw new Error('Inicia sesión antes de consultar la ruleta.');
+    validateUuid(user.id, 'La cuenta');
+    if (audienceFilter !== 'realm' && audienceFilter !== 'relationship') throw new Error('La audiencia de la ruleta no es válida.');
 
     const column = audienceFilter === 'relationship' ? 'last_relationship_spin_at' : 'last_group_spin_at';
     const { data, error } = await supabase
@@ -35,6 +38,8 @@ export const gachaService = {
     if (!user) {
       throw new Error('Inicia sesión antes de girar la ruleta.');
     }
+    validateUuid(user.id, 'La cuenta');
+    if (audienceFilter !== 'realm' && audienceFilter !== 'relationship') throw new Error('La audiencia de la ruleta no es válida.');
 
     const { data, error } = await supabase.rpc('spin_gacha_for_current_user', {
       p_audience_filter: audienceFilter,

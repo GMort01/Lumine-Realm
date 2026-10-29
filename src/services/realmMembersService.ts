@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
 import { ADMIN_EMAIL } from '../config/roles';
+import { InputValidationError, validateEmail, validateUuid } from '../utils/validation';
 
 export interface RealmMember {
   user_id: string;
@@ -100,6 +101,7 @@ export const realmMembersService = {
 
     if (error) throw error;
     if (!members.length) return [];
+    members.forEach((member) => validateUuid(member.user_id, 'El miembro'));
 
     const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
@@ -129,6 +131,7 @@ export const realmMembersService = {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!user) return new Set();
+    validateUuid(user.id, 'La cuenta');
 
     const { data, error } = await supabase
       .from('realm_map_hidden_members')
@@ -142,6 +145,8 @@ export const realmMembersService = {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!user) throw new Error('Inicia sesión para personalizar tu mapa.');
+    validateUuid(user.id, 'La cuenta');
+    validateUuid(memberId, 'El miembro');
     if (memberId === user.id) throw new Error('Tu perfil siempre aparece en el mapa.');
 
     if (visible) {
@@ -170,6 +175,7 @@ export const realmMembersService = {
   },
 
   async invitePartner(partnerId: string): Promise<void> {
+    validateUuid(partnerId, 'El miembro');
     const { error } = await supabase.rpc('invite_realm_partner', {
       p_partner_id: partnerId,
     });
@@ -177,6 +183,8 @@ export const realmMembersService = {
   },
 
   async respondToPartnerInvitation(relationshipId: string, response: 'accepted' | 'declined'): Promise<void> {
+    validateUuid(relationshipId, 'La invitación');
+    if (response !== 'accepted' && response !== 'declined') throw new InputValidationError('La respuesta a la invitación no es válida.');
     const { error } = await supabase.rpc('respond_realm_relationship', {
       p_relationship_id: relationshipId,
       p_response: response,
@@ -185,6 +193,7 @@ export const realmMembersService = {
   },
 
   async endRelationship(relationshipId: string): Promise<void> {
+    validateUuid(relationshipId, 'El vínculo de pareja');
     const { error } = await supabase.rpc('end_realm_relationship', {
       p_relationship_id: relationshipId,
     });
@@ -192,10 +201,11 @@ export const realmMembersService = {
   },
 
   async getMyPendingInvitations(email: string): Promise<RealmInvitation[]> {
+    const normalizedEmail = validateEmail(email);
     const { data, error } = await supabase
       .from('realm_invitations')
       .select('id, email, status, created_at')
-      .eq('email', email.trim().toLowerCase())
+      .eq('email', normalizedEmail)
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
@@ -216,10 +226,7 @@ export const realmMembersService = {
 
   async invite(email: string): Promise<RealmInviteResult> {
     await assertAdmin();
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      throw new Error('Escribe un correo electrónico válido.');
-    }
+    const normalizedEmail = validateEmail(email);
 
     const registeredUsers = await this.getRegisteredUsers();
     const registeredUser = registeredUsers.find((registered) => registered.email.toLowerCase() === normalizedEmail);
@@ -273,6 +280,7 @@ export const realmMembersService = {
 
   async setMemberEnabled(userId: string, isEnabled: boolean): Promise<string | null> {
     await assertAdmin();
+    validateUuid(userId, 'La cuenta');
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!user) throw new Error('Debes iniciar sesión para gestionar miembros.');
@@ -345,6 +353,7 @@ export const realmMembersService = {
   },
 
   async acceptInvitation(invitationId: string): Promise<void> {
+    validateUuid(invitationId, 'La invitación');
     const { error } = await supabase.rpc('accept_realm_invitation', {
       p_invitation_id: invitationId,
     });
@@ -353,6 +362,7 @@ export const realmMembersService = {
 
   async revokeInvitation(invitationId: string): Promise<void> {
     await assertAdmin();
+    validateUuid(invitationId, 'La invitación');
     const { error } = await supabase
       .from('realm_invitations')
       .update({ status: 'revoked' })

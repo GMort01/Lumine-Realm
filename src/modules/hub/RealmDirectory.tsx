@@ -127,7 +127,7 @@ export default function RealmDirectory({ user }: RealmDirectoryProps) {
       setNotice(message);
     } catch (error) {
       console.error('Error al actualizar un vínculo del Realm:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'No se pudo actualizar el vínculo.');
+      setErrorMessage('No se pudo actualizar el vínculo.');
     } finally {
       setSavingId(null);
     }

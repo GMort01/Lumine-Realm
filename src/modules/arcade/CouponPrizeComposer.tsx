@@ -5,6 +5,7 @@ import AudiencePicker, { type AudienceSelection } from '../../components/ui/Audi
 import type { ContentAudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import { couponPrizesService } from '../../services/couponPrizesService';
 import type { CouponPrize } from '../../services/couponPrizesService';
+import { InputValidationError, safeUiError } from '../../utils/validation';
 
 interface CouponPrizeComposerProps {
   user: SupabaseUser;
@@ -74,10 +75,10 @@ export default function CouponPrizeComposer({ user, isAdmin, audienceFilter, ref
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      if (audience.scope === 'individual' && !audience.recipientUserId) throw new Error('Selecciona el miembro que podrá ganar este premio.');
-      if (audience.scope === 'relationship' && !audience.relationshipId) throw new Error('Selecciona el vínculo que podrá ganar este premio.');
+      if (audience.scope === 'individual' && !audience.recipientUserId) throw new InputValidationError('Selecciona el miembro que podrá ganar este premio.');
+      if (audience.scope === 'relationship' && !audience.relationshipId) throw new InputValidationError('Selecciona el vínculo que podrá ganar este premio.');
       if (!editingPrize && visiblePrizes.filter((prize) => prize.is_active).length >= 8) {
-        throw new Error('Esta ruleta ya tiene 8 premios activos. Desactiva uno antes de añadir otro.');
+        throw new InputValidationError('Esta ruleta ya tiene 8 premios activos. Desactiva uno antes de añadir otro.');
       }
       const values = {
         title,
@@ -96,7 +97,7 @@ export default function CouponPrizeComposer({ user, isAdmin, audienceFilter, ref
       onCatalogChanged();
     } catch (error) {
       console.error('Error al guardar premio de ruleta:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'No se pudo guardar el premio.');
+      setErrorMessage(safeUiError(error, 'No se pudo guardar el premio.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -107,14 +108,14 @@ export default function CouponPrizeComposer({ user, isAdmin, audienceFilter, ref
     setErrorMessage(null);
     try {
       if (!prize.is_active && visiblePrizes.filter((item) => item.is_active).length >= 8) {
-        throw new Error('Esta ruleta ya tiene 8 premios activos. Desactiva uno antes de activar otro.');
+        throw new InputValidationError('Esta ruleta ya tiene 8 premios activos. Desactiva uno antes de activar otro.');
       }
       await couponPrizesService.updatePrize(prize.id, { is_active: !prize.is_active });
       await loadPrizes();
       onCatalogChanged();
     } catch (error) {
       console.error('Error al cambiar el estado del premio:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'No se pudo cambiar el estado.');
+      setErrorMessage(safeUiError(error, 'No se pudo cambiar el estado.'));
     } finally {
       setBusyPrizeId(null);
     }
@@ -130,7 +131,7 @@ export default function CouponPrizeComposer({ user, isAdmin, audienceFilter, ref
       onCatalogChanged();
     } catch (error) {
       console.error('Error al eliminar premio de ruleta:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'No se pudo eliminar el premio.');
+      setErrorMessage(safeUiError(error, 'No se pudo eliminar el premio.'));
     } finally {
       setBusyPrizeId(null);
     }
@@ -157,7 +158,7 @@ export default function CouponPrizeComposer({ user, isAdmin, audienceFilter, ref
           <Plus className="h-4 w-4 text-violet-300 transition group-open:rotate-45" />
         </summary>
         <form onSubmit={(event) => void handleSubmit(event)} className="mt-4 space-y-3 border-t border-slate-800 pt-4">
-          <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre del premio" aria-label="Nombre del premio" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
+          <input required maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre del premio" aria-label="Nombre del premio" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
           <textarea maxLength={2000} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué se gana..." aria-label="Descripción del premio" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
           <AudiencePicker userId={user.id} value={audience} onChange={setAudience} />
           {errorMessage && <p role="alert" className="flex items-center gap-2 text-xs text-red-300"><AlertCircle className="h-4 w-4" />{errorMessage}</p>}

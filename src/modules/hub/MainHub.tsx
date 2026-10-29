@@ -73,7 +73,7 @@ export default function MainHub({ gifts, onGiftCreated, onGiftUpdated, onGiftDel
       onGiftDeleted(gift.id);
     } catch (error) {
       console.error('Error al eliminar regalo:', error);
-      window.alert(error instanceof Error ? `No se pudo eliminar: ${error.message}` : 'No se pudo eliminar el regalo.');
+      window.alert('No se pudo eliminar el regalo.');
       return;
     }
 

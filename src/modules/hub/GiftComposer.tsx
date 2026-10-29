@@ -4,6 +4,7 @@ import { AlertCircle, Gift, LoaderCircle, Plus } from 'lucide-react';
 import AudiencePicker, { type AudienceSelection } from '../../components/ui/AudiencePicker';
 import { giftsService } from '../../services/giftsService';
 import type { Gift as GiftItem, NewGift } from '../../services/giftsService';
+import { InputValidationError, safeUiError } from '../../utils/validation';
 
 interface GiftComposerProps {
   user: SupabaseUser;
@@ -39,8 +40,8 @@ export default function GiftComposer({ user, gift = null, onGiftCreated, onGiftU
     let uploadedPath: string | null = null;
     let giftSaved = false;
     try {
-      if (audience.scope === 'individual' && !audience.recipientUserId) throw new Error('Selecciona a quién quieres enviar el regalo.');
-      if (audience.scope === 'relationship' && !audience.relationshipId) throw new Error('Selecciona el vínculo de pareja que podrá ver el regalo.');
+      if (audience.scope === 'individual' && !audience.recipientUserId) throw new InputValidationError('Selecciona a quién quieres enviar el regalo.');
+      if (audience.scope === 'relationship' && !audience.relationshipId) throw new InputValidationError('Selecciona el vínculo de pareja que podrá ver el regalo.');
 
       if (attachmentFile) {
         const uploaded = await giftsService.uploadGiftAttachment(attachmentFile);
@@ -87,13 +88,13 @@ export default function GiftComposer({ user, gift = null, onGiftCreated, onGiftU
       setAttachmentFile(null);
     } catch (error) {
       console.error('Error al guardar el regalo:', error);
-      let message = error instanceof Error ? error.message : 'Error inesperado.';
+      let message = safeUiError(error, 'No se pudo guardar el regalo.');
       if (uploadedPath && !giftSaved) {
         try {
           await giftsService.removeGiftAttachment(uploadedPath);
         } catch (cleanupError) {
           console.error('No se pudo limpiar el archivo que quedó sin regalo:', cleanupError);
-          message += ' No se pudo eliminar el archivo subido; revisa Storage.';
+          message += ' No se pudo limpiar el archivo subido. Contacta al administrador.';
         }
       }
       setErrorMessage(message);
@@ -114,7 +115,7 @@ export default function GiftComposer({ user, gift = null, onGiftCreated, onGiftU
       </summary>
       <form onSubmit={(event) => void handleSubmit(event)} className="mt-5 space-y-4 border-t border-slate-800 pt-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre del regalo" aria-label="Título del regalo" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
+          <input required maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre del regalo" aria-label="Título del regalo" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
           <input required maxLength={80} value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Categoría, por ejemplo Recuerdo" aria-label="Categoría" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
         </div>
         <textarea required maxLength={5000} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Cuenta la historia detrás de este regalo..." aria-label="Descripción" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
@@ -124,7 +125,7 @@ export default function GiftComposer({ user, gift = null, onGiftCreated, onGiftU
           </select>
           <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,application/pdf" onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)} aria-label="Adjuntar imagen o PDF" className="block w-full text-xs text-slate-400 file:mr-2 file:rounded-lg file:border-0 file:bg-violet-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-violet-200" />
         </div>
-        <input type="url" value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Enlace externo opcional" aria-label="Enlace de medio externo" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
+        <input type="url" maxLength={2048} value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Enlace externo opcional" aria-label="Enlace de medio externo" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
         <label className="flex items-center gap-2 text-xs text-slate-300">
           <input type="checkbox" checked={isUnlocked} onChange={(event) => setIsUnlocked(event.target.checked)} className="accent-violet-500" />
           Regalo desbloqueado

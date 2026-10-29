@@ -4,6 +4,7 @@ import { AlertCircle, FileImage, LoaderCircle, Plus } from 'lucide-react';
 import AudiencePicker, { type AudienceSelection } from '../../components/ui/AudiencePicker';
 import { timelineService } from '../../services/timelineService';
 import type { TimelineEvent } from '../../services/timelineService';
+import { InputValidationError, safeUiError } from '../../utils/validation';
 
 interface TimelineMemoryComposerProps {
   user: SupabaseUser;
@@ -42,8 +43,8 @@ export default function TimelineMemoryComposer({ user, memory = null, onMemoryCr
     let uploadedPath: string | null = null;
     let memorySaved = false;
     try {
-      if (audience.scope === 'individual' && !audience.recipientUserId) throw new Error('Selecciona a quién compartir el recuerdo.');
-      if (audience.scope === 'relationship' && !audience.relationshipId) throw new Error('Selecciona un vínculo de pareja aceptado.');
+      if (audience.scope === 'individual' && !audience.recipientUserId) throw new InputValidationError('Selecciona a quién compartir el recuerdo.');
+      if (audience.scope === 'relationship' && !audience.relationshipId) throw new InputValidationError('Selecciona un vínculo de pareja aceptado.');
       if (imageFile) uploadedPath = await timelineService.uploadImage(imageFile);
       const eventData = {
         title,
@@ -79,13 +80,13 @@ export default function TimelineMemoryComposer({ user, memory = null, onMemoryCr
       }
     } catch (error) {
       console.error('Error al guardar un recuerdo:', error);
-      let message = error instanceof Error ? error.message : 'Error inesperado.';
+      let message = safeUiError(error, 'No se pudo guardar el recuerdo.');
       if (uploadedPath && !memorySaved) {
         try {
           await timelineService.removeImage(uploadedPath);
         } catch (cleanupError) {
           console.error('No se pudo limpiar la imagen del recuerdo:', cleanupError);
-          message += ' La imagen quedó en Storage; revisa el bucket.';
+          message += ' No se pudo limpiar la imagen subida. Contacta al administrador.';
         }
       }
       setErrorMessage(message);
@@ -106,7 +107,7 @@ export default function TimelineMemoryComposer({ user, memory = null, onMemoryCr
       </summary>
       <form onSubmit={(event) => void handleSubmit(event)} className="mt-5 space-y-4 border-t border-slate-800 pt-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título del recuerdo" aria-label="Título del recuerdo" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
+          <input required maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título del recuerdo" aria-label="Título del recuerdo" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
           <input required type="date" max={todayAsInputValue()} value={eventDate} onChange={(event) => setEventDate(event.target.value)} aria-label="Fecha del recuerdo" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />
         </div>
         <textarea required maxLength={5000} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Cuenta qué pasó y por qué quieres recordarlo..." aria-label="Descripción" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-400" />

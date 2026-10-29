@@ -4,6 +4,7 @@ import { couponsService } from '../../services/couponsService';
 import type { Coupon } from '../../services/couponsService';
 import { realmMembersService } from '../../services/realmMembersService';
 import type { RealmMember } from '../../services/realmMembersService';
+import { safeUiError } from '../../utils/validation';
 
 interface CouponRedemptionDialogProps {
   coupon: Coupon;
@@ -61,7 +62,7 @@ export default function CouponRedemptionDialog({
         console.error('Error al cargar los destinatarios del canje:', error);
         if (active) {
           setLoadFailed(true);
-          setErrorMessage(error instanceof Error ? error.message : 'No se pudieron cargar los miembros del Realm.');
+          setErrorMessage(safeUiError(error, 'No se pudieron cargar los miembros del Realm.'));
         }
       })
       .finally(() => {
@@ -95,7 +96,7 @@ export default function CouponRedemptionDialog({
       onClose();
     } catch (error) {
       console.error('Error al solicitar canje del cupón:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'No se pudo solicitar el canje.');
+      setErrorMessage(safeUiError(error, 'No se pudo solicitar el canje.'));
     } finally {
       setIsSubmitting(false);
     }

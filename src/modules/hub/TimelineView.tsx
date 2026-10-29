@@ -45,7 +45,7 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
       setEvents((current) => current.filter((event) => event.id !== memory.id));
     } catch (error) {
       console.error('Error al eliminar recuerdo:', error);
-      window.alert(error instanceof Error ? `No se pudo eliminar: ${error.message}` : 'No se pudo eliminar el recuerdo.');
+      window.alert('No se pudo eliminar el recuerdo.');
     }
   }
 

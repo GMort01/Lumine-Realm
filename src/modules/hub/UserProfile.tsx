@@ -11,6 +11,7 @@ import { profilesService } from '../../services/profilesService';
 import type { PlayerProfile } from '../../services/profilesService';
 import { realmMembersService } from '../../services/realmMembersService';
 import type { RealmMember } from '../../services/realmMembersService';
+import { sanitizePlainText, validateEmail } from '../../utils/validation';
 
 type AuthMode = 'login' | 'signup';
 
@@ -213,19 +214,19 @@ export default function UserProfile({
 
     try {
       if (authMode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        const { error } = await supabase.auth.signInWithPassword({ email: validateEmail(email), password });
         if (error) {
           throw error;
         }
       } else {
         const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
+          email: validateEmail(email),
           password,
           options: {
             data: {
-              username: nickname.trim(),
-              nickname: nickname.trim(),
-              country,
+              username: sanitizePlainText(nickname, 'El nombre de usuario', 40),
+              nickname: sanitizePlainText(nickname, 'El nombre de usuario', 40),
+              country: sanitizePlainText(country, 'La ubicación', 80),
             },
           },
         });
@@ -394,6 +395,7 @@ export default function UserProfile({
                 type="password"
                 autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
                 minLength={6}
+                maxLength={128}
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -729,14 +731,14 @@ export default function UserProfile({
                 <label htmlFor="edit-profile-bio" className="mb-1.5 block text-xs font-medium text-slate-300">Sobre mí</label>
                 <textarea
                   id="edit-profile-bio"
-                  maxLength={300}
+                  maxLength={250}
                   rows={3}
                   value={editBio}
                   onChange={(event) => setEditBio(event.target.value)}
                   placeholder="Cuéntale algo a la comunidad..."
                   className="w-full resize-y rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-violet-400"
                 />
-                <p className="mt-1 text-right text-[10px] text-slate-500">{editBio.length}/300</p>
+                <p className="mt-1 text-right text-[10px] text-slate-500">{editBio.length}/250</p>
               </div>
               <div>
                 <label htmlFor="edit-profile-status" className="mb-1.5 block text-xs font-medium text-slate-300">Estado personalizado</label>

@@ -247,6 +247,8 @@ npm run build
 - Los buckets de imágenes de recuerdos y archivos de regalos son privados. Su lectura se filtra mediante las audiencias y se consulta con URLs firmadas temporales.
 - Los avatares se guardan en el bucket público `profile-avatars`; cada usuario solo puede subir o modificar archivos bajo su propia carpeta.
 - Los cupones se aprueban mediante `admin_approve_coupon_redemption`, que comprueba el rol y devuelve el resultado sin depender de un `SELECT` bloqueado por RLS después del cambio de estado.
+- El cliente sanitiza texto plano con DOMPurify y valida longitudes, URLs HTTPS de imágenes, correos e IDs UUID antes de guardar o consultar. Los errores técnicos de Supabase se registran para diagnóstico y no se muestran directamente en la interfaz.
+- La validación del frontend mejora la seguridad y la experiencia, pero no sustituye RLS ni las validaciones de las funciones SQL: mantén las políticas activas y aplica las comprobaciones de autorización en el servidor.
 
 ## Mapa y atribución
 

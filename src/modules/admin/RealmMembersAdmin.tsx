@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Check, Crown, LoaderCircle, MailPlus, Shield, UserRound, X } from 'lucide-react';
 import { realmMembersService } from '../../services/realmMembersService';
 import type { RealmInvitation, RealmRegisteredUser } from '../../services/realmMembersService';
+import { safeUiError } from '../../utils/validation';
 
 export default function RealmMembersAdmin() {
   const [email, setEmail] = useState('');
@@ -59,9 +60,9 @@ export default function RealmMembersAdmin() {
       }
     } catch (error) {
       console.error('Error al invitar a una persona al Realm:', error);
-      setErrorMessage(error instanceof Error && error.message.includes('duplicate')
+      setErrorMessage(typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
         ? 'Ya existe una invitación pendiente para ese correo.'
-        : error instanceof Error ? error.message : 'No se pudo enviar la invitación.');
+        : safeUiError(error, 'No se pudo enviar la invitación.'));
     } finally {
       setIsInviting(false);
     }
@@ -102,9 +103,7 @@ export default function RealmMembersAdmin() {
         : cleanupWarning ?? `${user.username} se quitó del Realm y se eliminaron sus regalos, premios, recuerdos y vínculos.`);
     } catch (error) {
       console.error('Error exacto de Supabase al cambiar la vinculación del usuario:', error);
-      setErrorMessage(error instanceof Error
-        ? `No se pudo actualizar su vinculación al Realm: ${error.message}`
-        : 'No se pudo actualizar su vinculación al Realm.');
+      setErrorMessage('No se pudo actualizar su vinculación al Realm.');
     } finally {
       setBusyId(null);
     }

@@ -22,6 +22,7 @@ import { gachaService } from '../../services/gachaService';
 import type { ContentAudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import type { CouponPrize } from '../../services/couponPrizesService';
 import type { Coupon } from '../../services/couponsService';
+import { safeUiError } from '../../utils/validation';
 
 const prizeColors = ['#a98bb6', '#d89aaa', '#9aa8c3', '#cf8b85', '#d4b56d', '#8cb59d', '#82afbd', '#ba8aaa'];
 const MAX_PRIZES = prizeColors.length;
@@ -236,7 +237,7 @@ export default function GachaWheel({ onOpenProfile, audienceFilter }: GachaWheel
     } catch (error) {
       console.error('Error al girar la ruleta en el servidor:', error);
       setIsSpinning(false);
-      setSpinError(error instanceof Error ? error.message : 'No se pudo girar la ruleta. Inténtalo de nuevo.');
+      setSpinError(safeUiError(error, 'No se pudo girar la ruleta. Inténtalo de nuevo.'));
       try {
         setLastSpinAt(await gachaService.getLastSpinAt(audienceFilter));
       } catch (refreshError) {

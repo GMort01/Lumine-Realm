@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { ADMIN_EMAIL } from '../config/roles';
+import { InputValidationError, sanitizePlainText, validateAudience, validateUuid } from '../utils/validation';
 
 export type CouponPrizeAudience = 'realm' | 'individual' | 'relationship';
 
@@ -73,14 +74,19 @@ export const couponPrizesService = {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!user) throw new Error('Inicia sesión para proponer un premio.');
+    validateUuid(user.id, 'La cuenta');
+    const audienceScope = prize.audience_scope ?? 'realm';
+    const recipientUserId = prize.recipient_user_id ?? null;
+    const relationshipId = prize.relationship_id ?? null;
+    validateAudience(audienceScope, recipientUserId, relationshipId);
     const { data, error } = await supabase
       .from('coupon_prizes')
       .insert({
-        title: prize.title.trim(),
-        description: prize.description.trim(),
-        audience_scope: prize.audience_scope ?? 'realm',
-        recipient_user_id: prize.recipient_user_id ?? null,
-        relationship_id: prize.relationship_id ?? null,
+        title: sanitizePlainText(prize.title, 'El título', 80),
+        description: sanitizePlainText(prize.description, 'La descripción', 2000),
+        audience_scope: audienceScope,
+        recipient_user_id: recipientUserId,
+        relationship_id: relationshipId,
         created_by: user.id,
       })
       .select()
@@ -94,6 +100,7 @@ export const couponPrizesService = {
   },
 
   async updatePrize(prizeId: string, updates: Partial<NewCouponPrize> & { is_active?: boolean }): Promise<CouponPrize> {
+    validateUuid(prizeId, 'El premio');
     const values: {
       title?: string;
       description?: string;
@@ -102,12 +109,19 @@ export const couponPrizesService = {
       recipient_user_id?: string | null;
       relationship_id?: string | null;
     } = {};
-    if (updates.title !== undefined) values.title = updates.title.trim();
-    if (updates.description !== undefined) values.description = updates.description.trim();
+    if (updates.title !== undefined) values.title = sanitizePlainText(updates.title, 'El título', 80);
+    if (updates.description !== undefined) values.description = sanitizePlainText(updates.description, 'La descripción', 2000);
     if (updates.is_active !== undefined) values.is_active = updates.is_active;
-    if (updates.audience_scope !== undefined) values.audience_scope = updates.audience_scope;
-    if (updates.recipient_user_id !== undefined) values.recipient_user_id = updates.recipient_user_id;
-    if (updates.relationship_id !== undefined) values.relationship_id = updates.relationship_id;
+    if (updates.audience_scope !== undefined) {
+      validateAudience(updates.audience_scope, updates.recipient_user_id, updates.relationship_id);
+      values.audience_scope = updates.audience_scope;
+      values.recipient_user_id = updates.recipient_user_id ?? null;
+      values.relationship_id = updates.relationship_id ?? null;
+    } else {
+      if (updates.recipient_user_id !== undefined || updates.relationship_id !== undefined) {
+        throw new InputValidationError('Selecciona una audiencia para cambiar el destinatario.');
+      }
+    }
 
     const { data, error } = await supabase
       .from('coupon_prizes')
@@ -121,6 +135,7 @@ export const couponPrizesService = {
   },
 
   async deletePrize(prizeId: string): Promise<void> {
+    validateUuid(prizeId, 'El premio');
     const { error } = await supabase
       .from('coupon_prizes')
       .delete()
