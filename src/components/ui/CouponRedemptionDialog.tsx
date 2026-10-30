@@ -131,16 +131,16 @@ export default function CouponRedemptionDialog({
             {coupon.audience_scope === 'relationship' ? (
               partner ? (
                 <p className="rounded-xl border border-pink-300/15 bg-pink-400/5 p-4 text-sm text-pink-100">
-                  Este cupón solo se puede canjear con <strong>{partner.username}</strong>, tu pareja vinculada.
+                  Este cupón se enviará a <strong>{partner.username}</strong>. Tu pareja podrá aceptar o rechazar la solicitud.
                 </p>
               ) : null
             ) : (
               <fieldset disabled={loadFailed} className="space-y-3 disabled:opacity-50">
-                <legend className="mb-2 text-xs font-semibold text-slate-300">¿A quién va dirigido?</legend>
+                <legend className="mb-2 text-xs font-semibold text-slate-300">Elige cómo compartir el cupón</legend>
                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-200">
                   <input type="radio" name="coupon-target" checked={!forAll} onChange={() => { setForAll(false); if (!targetUserId) setTargetUserId(members[0]?.user_id ?? ''); }} />
                   <Users className="h-4 w-4 text-violet-300" />
-                  <span>Un miembro del Realm</span>
+                  <span>Un miembro (acepta personalmente)</span>
                 </label>
                 {!forAll && (
                   <select
@@ -157,7 +157,7 @@ export default function CouponRedemptionDialog({
                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-200">
                   <input type="radio" name="coupon-target" checked={forAll} onChange={() => setForAll(true)} />
                   <Users className="h-4 w-4 text-pink-300" />
-                  <span>Todos los miembros del Realm</span>
+                  <span>Grupo completo (aprueba Game Master)</span>
                 </label>
               </fieldset>
             )}

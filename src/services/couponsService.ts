@@ -2,7 +2,7 @@ import { supabase } from '../config/supabase';
 import { ADMIN_EMAIL } from '../config/roles';
 import { validateUuid } from '../utils/validation';
 
-export type CouponStatus = 'available' | 'requested' | 'redeemed';
+export type CouponStatus = 'available' | 'requested' | 'redeemed' | 'declined';
 
 export interface Coupon {
   id: string;
@@ -74,6 +74,32 @@ export const couponsService = {
       throw new Error('La respuesta del servidor al solicitar el canje no es válida.');
     }
 
+    return data as Coupon;
+  },
+
+  async getMyIncomingRedemptionRequests(): Promise<Coupon[]> {
+    await getAuthenticatedUserId();
+    // Se invoca la función con el nombre corregido y compatible en Supabase
+    const { data, error } = await supabase.rpc('get_incoming_coupon_requests');
+    if (error) throw error;
+    if (!Array.isArray(data)) {
+      throw new Error('La respuesta del servidor al consultar solicitudes de canje no es válida.');
+    }
+    return data as Coupon[];
+  },
+
+  async respondToRedemption(couponId: string, accept: boolean): Promise<Coupon> {
+    await getAuthenticatedUserId();
+    validateUuid(couponId, 'El cupón');
+    if (typeof accept !== 'boolean') throw new Error('La respuesta a la solicitud no es válida.');
+    const { data, error } = await supabase.rpc('respond_to_coupon_redemption', {
+      p_coupon_id: couponId,
+      p_accept: accept,
+    });
+    if (error) throw error;
+    if (!data || typeof data !== 'object' || !('id' in data)) {
+      throw new Error('La respuesta del servidor al responder la solicitud no es válida.');
+    }
     return data as Coupon;
   },
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { motion } from 'framer-motion';
-import { Clock3, LoaderCircle, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Clock3, LoaderCircle, Pencil, Sparkles, Trash2, X } from 'lucide-react';
 import { ADMIN_EMAIL } from '../../config/roles';
 import ContentAudienceFilter, { type ContentAudienceFilter as AudienceFilter } from '../../components/ui/ContentAudienceFilter';
 import { timelineService } from '../../services/timelineService';
@@ -24,12 +24,22 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
   const [reloadVersion, setReloadVersion] = useState(0);
   const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>('realm');
   const [editingMemory, setEditingMemory] = useState<TimelineEvent | null>(null);
+  
+  // Estado para controlar la imagen abierta en pantalla completa (Lightbox)
+  const [selectedImage, setSelectedImage] = useState<{ url: string; title: string } | null>(null);
+
   const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
-  const visibleEvents = events.filter((event) => (
-    audienceFilter === 'relationship'
-      ? event.audience_scope === 'relationship'
-      : event.audience_scope !== 'relationship'
-  ));
+
+  const visibleEvents = events.filter((event) => {
+    if (audienceFilter === 'relationship') {
+      return (
+        event.audience_scope === 'relationship' || 
+        event.audience_scope === 'individual' ||
+        event.recipient_user_id === user?.id
+      );
+    }
+    return event.audience_scope === 'realm' || event.audience_scope === 'individual';
+  });
 
   async function handleDeleteMemory(memory: TimelineEvent) {
     if (!window.confirm(`¿Eliminar el recuerdo "${memory.title}"?`)) return;
@@ -52,6 +62,8 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
   useEffect(() => {
     if (!user) return;
     let active = true;
+    setIsLoading(true);
+
     void timelineService.getEvents()
       .then((items) => {
         if (active) {
@@ -61,7 +73,7 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
       })
       .catch((error: unknown) => {
         console.error('Error al cargar la línea del tiempo:', error);
-        if (active) setErrorMessage('No se pudo cargar la línea del tiempo. Comprueba que la migración esté aplicada.');
+        if (active) setErrorMessage('No se pudo cargar la línea del tiempo. Comprueba que las políticas de Supabase estén activas.');
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -115,7 +127,7 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
         {errorMessage && <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-200">{errorMessage}</p>}
         {!isLoading && !errorMessage && visibleEvents.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-5 py-10 text-center text-sm text-slate-400">
-            Aún no hay recuerdos en la línea del tiempo.
+            Aún no hay recuerdos en esta sección.
           </div>
         )}
 
@@ -130,7 +142,27 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
             >
               <span className="absolute left-[10px] top-5 h-3 w-3 rounded-full border-2 border-violet-200 bg-violet-500 shadow-[0_0_12px_rgba(168,85,247,0.65)] sm:left-[14px]" />
               <article className="overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900/70 shadow-lg shadow-black/10 backdrop-blur-md">
-                {event.image_url && <img src={event.image_url} alt={event.title} className="max-h-80 w-full object-cover" loading="lazy" />}
+                
+                {/* Contenedor de la Imagen Adaptable y Clickeable */}
+                {event.image_url && (
+                  <div 
+                    className="relative group cursor-pointer overflow-hidden bg-slate-950/80 flex items-center justify-center p-2 border-b border-slate-800/50"
+                    onClick={() => setSelectedImage({ url: event.image_url!, title: event.title })}
+                  >
+                    <img 
+                      src={event.image_url} 
+                      alt={event.title} 
+                      className="max-h-[450px] w-full object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.01]" 
+                      loading="lazy" 
+                    />
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                      <span className="bg-slate-900/90 text-violet-200 text-xs px-3 py-1.5 rounded-full border border-violet-500/30 backdrop-blur-sm shadow-md">
+                        Ver foto completa 🔍
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-5">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <time dateTime={event.event_date} className="font-mono text-[10px] uppercase tracking-wider text-violet-300">{formatDate(event.event_date)}</time>
@@ -151,6 +183,37 @@ export default function TimelineView({ user }: { user: SupabaseUser | null }) {
       </section>
       </>
       )}
+
+      {/* MODAL LIGHTBOX PARA VER IMAGEN A PANTALLA COMPLETA */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-md"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="relative max-w-5xl max-h-[90vh] flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setSelectedImage(null)}
+                className="absolute -top-12 right-0 rounded-full bg-slate-800/80 p-2 text-slate-300 hover:bg-slate-700 hover:text-white"
+              >
+                <X className="h-6 w-6" />
+              </button>
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.title}
+                className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-violet-500/20"
+              />
+              <p className="mt-3 font-mono text-xs text-slate-300 bg-slate-900/80 px-4 py-1.5 rounded-full border border-slate-800">
+                {selectedImage.title}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

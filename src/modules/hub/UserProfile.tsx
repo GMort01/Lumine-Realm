@@ -70,12 +70,28 @@ export default function UserProfile({
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [requestedCoupons, setRequestedCoupons] = useState<Coupon[]>([]);
+  const [incomingCoupons, setIncomingCoupons] = useState<Coupon[]>([]);
+  const [incomingCouponsLoading, setIncomingCouponsLoading] = useState(false);
+  const [incomingCouponsError, setIncomingCouponsError] = useState<string | null>(null);
+  const [respondingCouponId, setRespondingCouponId] = useState<string | null>(null);
+  const [incomingCouponNotice, setIncomingCouponNotice] = useState<string | null>(null);
   const [realmMembers, setRealmMembers] = useState<RealmMember[]>([]);
   const [adminCouponsLoading, setAdminCouponsLoading] = useState(false);
   const [adminCouponError, setAdminCouponError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+
   const visibleCoupons = coupons.filter((coupon) => coupon.audience_scope === couponAudienceFilter);
   const memberNames = new Map(realmMembers.map((member) => [member.user_id, member.username]));
+
+  // Recarga sincronizada para actualización inmediata en UI
+  function refreshCoupons() {
+    if (!user) return;
+    void couponsService.getMyCoupons().then(setCoupons).catch(console.error);
+    void couponsService.getMyIncomingRedemptionRequests().then(setIncomingCoupons).catch(console.error);
+    if (isAdmin) {
+      void couponsService.getRequestedCouponsForAdmin().then(setRequestedCoupons).catch(console.error);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -113,6 +129,39 @@ export default function UserProfile({
         if (active) {
           setCouponsLoading(false);
         }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      void Promise.resolve().then(() => {
+        if (active) setIncomingCoupons([]);
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setIncomingCouponsLoading(true);
+      setIncomingCouponsError(null);
+    });
+    void couponsService.getMyIncomingRedemptionRequests()
+      .then((items) => {
+        if (active) setIncomingCoupons(items);
+      })
+      .catch((error: unknown) => {
+        console.error('Error al cargar solicitudes personales de canje:', error);
+        if (active) setIncomingCouponsError('No se pudieron cargar las solicitudes de canje recibidas.');
+      })
+      .finally(() => {
+        if (active) setIncomingCouponsLoading(false);
       });
 
     return () => {
@@ -301,14 +350,32 @@ export default function UserProfile({
     setApprovingId(couponId);
     setAdminCouponError(null);
     try {
-      const updatedCoupon = await couponsService.approveRedemption(couponId);
-      setRequestedCoupons((current) => current.filter((coupon) => coupon.id !== updatedCoupon.id));
-      setCoupons((current) => current.map((coupon) => coupon.id === updatedCoupon.id ? updatedCoupon : coupon));
+      await couponsService.approveRedemption(couponId);
+      refreshCoupons();
     } catch (error) {
       console.error('Error al aprobar el canje:', error);
       setAdminCouponError('No se pudo aprobar el canje. Actualiza la lista e inténtalo otra vez.');
     } finally {
       setApprovingId(null);
+    }
+  }
+
+  async function handleRespondToRedemption(couponId: string, accept: boolean) {
+    if (respondingCouponId) return;
+    setRespondingCouponId(couponId);
+    setIncomingCouponsError(null);
+    setIncomingCouponNotice(null);
+    try {
+      await couponsService.respondToRedemption(couponId, accept);
+      setIncomingCouponNotice(accept
+        ? 'Aceptaste el cupón. ¡Ahora pueden coordinar el canje!'
+        : 'Rechazaste la solicitud. El cupón quedó disponible para que su dueño vuelva a solicitarlo.');
+      refreshCoupons();
+    } catch (error) {
+      console.error('Error al responder solicitud de canje:', error);
+      setIncomingCouponsError('No se pudo responder la solicitud. Actualiza la página e inténtalo de nuevo.');
+    } finally {
+      setRespondingCouponId(null);
     }
   }
 
@@ -580,9 +647,11 @@ export default function UserProfile({
                       ? 'bg-slate-800 text-slate-500'
                       : coupon.status === 'requested'
                         ? 'bg-amber-500/10 text-amber-300'
+                        : coupon.status === 'declined'
+                          ? 'bg-red-500/10 text-red-300'
                         : 'bg-emerald-500/10 text-emerald-300'
                   }`}>
-                    {coupon.status === 'redeemed' || coupon.is_redeemed ? 'Canjeado' : coupon.status === 'requested' ? 'Solicitado' : coupon.expires_at && new Date(coupon.expires_at) < new Date() ? 'Vencido' : 'Disponible'}
+                    {coupon.status === 'redeemed' || coupon.is_redeemed ? 'Canjeado' : coupon.status === 'requested' ? 'Solicitado' : coupon.status === 'declined' ? 'Rechazado' : coupon.expires_at && new Date(coupon.expires_at) < new Date() ? 'Vencido' : 'Disponible'}
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{coupon.description}</p>
@@ -595,7 +664,7 @@ export default function UserProfile({
               ) : coupon.status === 'requested' ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-amber-300">
                   <LoaderCircle className="h-3.5 w-3.5" />
-                  Esperando aprobación
+                  Esperando respuesta
                 </span>
               ) : coupon.expires_at && new Date(coupon.expires_at) < new Date() ? (
                 <span className="shrink-0 text-xs text-slate-500">Cupón vencido</span>
@@ -606,9 +675,60 @@ export default function UserProfile({
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-pink-400/20 bg-pink-500/10 px-3 py-2 text-xs font-semibold text-pink-200 transition hover:bg-pink-500/20 disabled:cursor-wait disabled:opacity-60"
                 >
                   <Ticket className="h-3.5 w-3.5" />
-                  Solicitar Canje
+                  {coupon.status === 'declined' ? 'Solicitar de nuevo' : 'Solicitar Canje'}
                 </button>
               )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-labelledby="incoming-redemptions-title" className="rounded-3xl border border-pink-300/15 bg-slate-900/70 p-5 sm:p-7">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h3 id="incoming-redemptions-title" className="flex items-center gap-2 text-lg font-bold text-slate-100">
+              <Heart className="h-5 w-5 text-pink-300" />
+              Cupones para ti
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">Acepta o rechaza solicitudes de tu pareja o de miembros del Realm.</p>
+          </div>
+          <span className="rounded-full border border-pink-300/15 bg-pink-300/10 px-3 py-1 font-mono text-xs text-pink-200">{incomingCoupons.length}</span>
+        </div>
+        {incomingCouponsLoading && <p role="status" className="text-xs text-slate-400">Cargando solicitudes recibidas...</p>}
+        {incomingCouponsError && <p role="alert" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">{incomingCouponsError}</p>}
+        {incomingCouponNotice && <p role="status" className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">{incomingCouponNotice}</p>}
+        {!incomingCouponsLoading && incomingCoupons.length === 0 && !incomingCouponsError && (
+          <p className="rounded-2xl border border-dashed border-slate-700 px-5 py-7 text-center text-sm text-slate-500">No tienes solicitudes pendientes.</p>
+        )}
+        <ul className="space-y-3">
+          {incomingCoupons.map((coupon) => (
+            <li key={coupon.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-pink-300/10 bg-slate-950/50 p-4 sm:flex-row sm:items-center">
+              <div>
+                <p className="font-semibold text-pink-100">{coupon.title}</p>
+                <p className="mt-1 text-xs text-slate-400">{coupon.description}</p>
+                <p className="mt-1 text-[10px] uppercase tracking-wider text-pink-300">
+                  {coupon.audience_scope === 'relationship' ? 'Vínculo de pareja' : 'Miembro del Realm'}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  disabled={respondingCouponId !== null}
+                  onClick={() => void handleRespondToRedemption(coupon.id, false)}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Rechazar
+                </button>
+                <button
+                  type="button"
+                  disabled={respondingCouponId !== null}
+                  onClick={() => void handleRespondToRedemption(coupon.id, true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-600 to-violet-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {respondingCouponId === coupon.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Aceptar
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -668,17 +788,19 @@ export default function UserProfile({
           onClose={() => setRedemptionCoupon(null)}
           onSuccess={(updatedCoupon) => {
             setCoupons((current) => current.map((coupon) => coupon.id === updatedCoupon.id ? updatedCoupon : coupon));
+            refreshCoupons();
           }}
         />
       )}
 
+      {/* MODAL COMPLETA EDITAR PERFIL CON TODOS TUS INPUTS */}
       {isEditingProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => setIsEditingProfile(false)}>
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-profile-title"
-            className="w-full max-w-lg rounded-3xl border border-violet-400/20 bg-slate-900 p-6 shadow-2xl shadow-violet-950/40 sm:p-8"
+            className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-violet-400/20 bg-slate-900 p-6 shadow-2xl shadow-violet-950/40 sm:p-8"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-6 flex items-start justify-between gap-4">

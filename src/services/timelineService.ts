@@ -52,6 +52,7 @@ function validateImagePath(path: string | null | undefined) {
 
 export const timelineService = {
   async getEvents(): Promise<TimelineEvent[]> {
+    // Traer todos los eventos de la línea de tiempo ordenados por fecha
     const { data, error } = await supabase
       .from('timeline_events')
       .select('id, title, description, event_date, image_path, is_anniversary, audience_scope, recipient_user_id, relationship_id, created_by, created_at')
@@ -60,14 +61,38 @@ export const timelineService = {
 
     if (error) throw error;
 
-    return Promise.all(data.map(async (event) => {
-      if (!event.image_path) return { ...event, image_url: null };
-      const { data: image, error: imageError } = await supabase.storage
-        .from(TIMELINE_BUCKET)
-        .createSignedUrl(event.image_path, 60 * 60);
-      if (imageError) throw imageError;
-      return { ...event, image_url: image.signedUrl };
-    })) as Promise<TimelineEvent[]>;
+    // Procesar imágenes con fallback de URL pública o firmada sin romper la carga global
+    return Promise.all(
+      data.map(async (event) => {
+        if (!event.image_path) return { ...event, image_url: null };
+
+        try {
+          // Intentar obtener primero la URL pública
+          const { data: publicUrlData } = supabase.storage
+            .from(TIMELINE_BUCKET)
+            .getPublicUrl(event.image_path);
+
+          if (publicUrlData?.publicUrl) {
+            return { ...event, image_url: publicUrlData.publicUrl };
+          }
+
+          // Si requiere URL firmada:
+          const { data: signedData, error: imageError } = await supabase.storage
+            .from(TIMELINE_BUCKET)
+            .createSignedUrl(event.image_path, 60 * 60 * 24); // Válido por 24h
+
+          if (imageError || !signedData) {
+            console.warn(`No se pudo generar la URL para la imagen ${event.image_path}:`, imageError);
+            return { ...event, image_url: null };
+          }
+
+          return { ...event, image_url: signedData.signedUrl };
+        } catch (err) {
+          console.error('Error al resolver la imagen del recuerdo:', err);
+          return { ...event, image_url: null };
+        }
+      })
+    );
   },
 
   async uploadImage(file: File): Promise<string> {
